@@ -1,6 +1,6 @@
 from openai import OpenAI
 import streamlit as st
-from src.credibility_chatbot.assess_credibility import assess_url_credibility
+from assess_credibility import assess_article_credibility
 
 with st.sidebar:
     openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
