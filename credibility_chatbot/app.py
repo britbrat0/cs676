@@ -1,6 +1,10 @@
 from openai import OpenAI
 import streamlit as st
-from assess_credibility import assess_url_credibility  
+from assess_credibility import assess_url_credibility
+
+if prompt.startswith("http"):
+    result = assess_url_credibility(prompt)
+    msg = f"**Credibility Score:** {result['score']}\n\n**Explanation:** {result['explanation']}"
 
 # Sidebar
 with st.sidebar:
