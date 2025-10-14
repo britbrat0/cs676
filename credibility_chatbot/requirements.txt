@@ -4,3 +4,7 @@ uv
 scikit-learn
 pandas
 numpy
+requests
+beautifulsoup4
+tldextract
+validators
