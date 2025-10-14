@@ -1,15 +1,14 @@
+# app.py
 from openai import OpenAI
 import streamlit as st
 from assess_credibility import assess_url_credibility
+import validators
 
-# -----------------------------
-# Streamlit UI setup
-# -----------------------------
 st.set_page_config(page_title="Credibility Chatbot", page_icon="💬")
 st.title("💬 Credibility Chatbot")
 st.caption("🚀 Chat with an AI that can assess the credibility of online articles")
 
-# Sidebar for OpenAI API key
+# Sidebar: OpenAI API key
 with st.sidebar:
     openai_api_key = st.text_input(
         "OpenAI API Key", key="chatbot_api_key", type="password"
@@ -20,43 +19,38 @@ with st.sidebar:
 # Initialize chat messages
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "Hi! Send me a URL to evaluate."}
+        {"role": "assistant", "content": "Hi! Send me a URL to evaluate or ask a question."}
     ]
 
-# Display previous chat messages
+# Display previous messages
 for msg in st.session_state["messages"]:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# -----------------------------
-# Handle user input
-# -----------------------------
+# Chat input
 if prompt := st.chat_input("Enter a URL or ask a question..."):
-    # Append user message
     st.session_state["messages"].append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
     # -----------------------------
-    # If input is a URL → credibility assessment
+    # URL detection using validators
     # -----------------------------
-    if prompt.startswith("http"):
+    if validators.url(prompt):
         result = assess_url_credibility(prompt)
         msg = f"**Credibility Score:** {result['score']}\n\n**Explanation:** {result['explanation']}"
-    
-    # -----------------------------
-    # Otherwise → use OpenAI for general chatbot response
-    # -----------------------------
     else:
+        # General chatbot via OpenAI
         if not openai_api_key:
             st.info("Please add your OpenAI API key in the sidebar to continue.")
             st.stop()
-
         client = OpenAI(api_key=openai_api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=st.session_state["messages"]
-        )
-        msg = response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=st.session_state["messages"]
+            )
+            msg = response.choices[0].message.content
+        except Exception as e:
+            msg = f"Error with OpenAI API: {e}"
 
-    # Append assistant response
     st.session_state["messages"].append({"role": "assistant", "content": msg})
     st.chat_message("assistant").write(msg)
