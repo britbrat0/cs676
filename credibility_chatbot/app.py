@@ -8,14 +8,14 @@ import json
 try:
     from openai import OpenAI
 except ModuleNotFoundError:
-    st.error("OpenAI package not installed. Check requirements.txt.")
-    st.stop()
+    print("OpenAI package not installed. Check requirements.txt.")
+    raise
 
 try:
     from google_search_results import GoogleSearch
 except ModuleNotFoundError:
-    st.error("google-search-results package not installed. Check requirements.txt.")
-    st.stop()
+    print("google-search-results package not installed. Check requirements.txt.")
+    raise
 
 
 # -----------------------------
