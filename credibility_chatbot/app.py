@@ -52,4 +52,51 @@ def search_web(query: str):
         search = GoogleSearch(params)
         results = search.get_dict()
         if "organic_results" in results:
-            return [r.get("sni]()
+            return [r.get("snippet", "") for r in results["organic_results"][:3]]
+    except Exception as e:
+        return [f"Search error: {e}"]
+    return ["No results found."]
+
+# -----------------------------
+# Helper: Assess URL credibility
+# -----------------------------
+def assess_url(url: str):
+    try:
+        from assess_credibility import assess_url_credibility
+        return assess_url_credibility(url)
+    except Exception as e:
+        return {"score": 0.0, "explanation": f"Error analyzing URL: {e}"}
+
+# -----------------------------
+# Main interaction
+# -----------------------------
+if prompt := st.chat_input("Ask a question or enter a URL"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
+
+    if prompt.startswith("http"):
+        # URL → credibility scoring
+        with st.spinner("🔍 Assessing credibility..."):
+            result = assess_url(prompt)
+        st.json(result)
+        st.session_state.messages.append({"role": "assistant", "content": json.dumps(result)})
+    else:
+        # General question → web search + GPT
+        with st.spinner("🌎 Searching the web..."):
+            snippets = search_web(prompt)
+        context = "\n".join(snippets)
+        system_message = {"role": "system", "content": f"Use the following web results to answer the user's question:\n{context}"}
+        messages = [system_message] + st.session_state.messages
+
+        try:
+            with st.spinner("🤖 Generating answer..."):
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages
+                )
+            msg = response.choices[0].message.content
+        except Exception as e:
+            msg = f"Error with OpenAI API: {e}"
+
+        st.session_state.messages.append({"role": "assistant", "content": msg})
+        st.chat_message("assistant").write(msg)
