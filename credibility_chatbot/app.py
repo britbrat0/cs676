@@ -1,56 +1,107 @@
-# app.py
-from openai import OpenAI
 import streamlit as st
-from assess_credibility import assess_url_credibility
-import validators
+from openai import OpenAI
+from serpapi import GoogleSearch
+import json
 
-st.set_page_config(page_title="Credibility Chatbot", page_icon="💬")
-st.title("💬 Credibility Chatbot")
-st.caption("🚀 Chat with an AI that can assess the credibility of online articles")
-
-# Sidebar: OpenAI API key
+# -----------------------------
+# Streamlit Sidebar: API setup
+# -----------------------------
 with st.sidebar:
-    openai_api_key = st.text_input(
-        "OpenAI API Key", key="chatbot_api_key", type="password"
-    )
-    st.markdown("[Get an OpenAI API key](https://platform.openai.com/account/api-keys)")
-    st.markdown("[View the source code](https://github.com/streamlit/llm-examples/blob/main/Chatbot.py)")
+    st.title("🔑 API Configuration")
+    openai_api_key = st.secrets.get("OPENAI_API_KEY")
+    serpapi_key = st.secrets.get("SERPAPI_KEY")
+    st.markdown("[Get OpenAI API key](https://platform.openai.com/account/api-keys)")
+    st.markdown("[Get SerpAPI key](https://serpapi.com/)")
+    st.markdown("[View the source code](https://github.com/britbrat0/cs676)")
 
-# Initialize chat messages
+# -----------------------------
+# App Title
+# -----------------------------
+st.title("🌐 Credibility Chatbot + Web Search")
+st.caption("🚀 Analyze URLs or ask questions with real-time web results")
+
+# -----------------------------
+# Initialize OpenAI client
+# -----------------------------
+if not openai_api_key:
+    st.error("Please add your OpenAI API key to continue.")
+    st.stop()
+
+client = OpenAI(api_key=openai_api_key)
+
+# -----------------------------
+# Chat session state
+# -----------------------------
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [
-        {"role": "assistant", "content": "Hi! Send me a URL to evaluate or ask a question."}
-    ]
+    st.session_state["messages"] = [{"role": "assistant", "content": "Hi! Paste a URL or ask a question."}]
 
-# Display previous messages
-for msg in st.session_state["messages"]:
+for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# Chat input
-if prompt := st.chat_input("Enter a URL or ask a question..."):
-    st.session_state["messages"].append({"role": "user", "content": prompt})
+# -----------------------------
+# Helper: Perform web search
+# -----------------------------
+def search_web(query: str):
+    """Retrieve short summaries from top search results."""
+    if not serpapi_key:
+        return ["No SerpAPI key configured."]
+    try:
+        params = {"q": query, "api_key": serpapi_key, "num": 3}
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        if "organic_results" in results:
+            return [r.get("snippet", "") for r in results["organic_results"][:3]]
+    except Exception as e:
+        return [f"Search error: {e}"]
+    return ["No results found."]
+
+# -----------------------------
+# Helper: Analyze URL credibility
+# -----------------------------
+def assess_url_credibility(url: str):
+    try:
+        from assess_credibility import assess_url_credibility as ac
+        result = ac(url)
+        return result
+    except Exception as e:
+        return {"score": 0.0, "explanation": f"Error analyzing URL: {e}"}
+
+# -----------------------------
+# Main interaction
+# -----------------------------
+if prompt := st.chat_input("Ask a question or enter a URL"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
-    # -----------------------------
-    # URL detection using validators
-    # -----------------------------
-    if validators.url(prompt):
-        result = assess_url_credibility(prompt)
-        msg = f"**Credibility Score:** {result['score']}\n\n**Explanation:** {result['explanation']}"
+    # Case 1: URL → Credibility check
+    if prompt.startswith("http"):
+        with st.spinner("🔍 Assessing credibility..."):
+            result = assess_url_credibility(prompt)
+        st.json(result)
+        st.session_state.messages.append({"role": "assistant", "content": json.dumps(result)})
+
+    # Case 2: General question → Web search + GPT response
     else:
-        # General chatbot via OpenAI
-        if not openai_api_key:
-            st.info("Please add your OpenAI API key in the sidebar to continue.")
-            st.stop()
-        client = OpenAI(api_key=openai_api_key)
+        with st.spinner("🌎 Searching the web..."):
+            snippets = search_web(prompt)
+        context = "\n".join(snippets)
+
+        system_message = {
+            "role": "system",
+            "content": f"Use the following recent web information to answer:\n{context}"
+        }
+
+        messages = [system_message] + st.session_state.messages
+
         try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=st.session_state["messages"]
-            )
+            with st.spinner("🤖 Generating answer..."):
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages
+                )
             msg = response.choices[0].message.content
         except Exception as e:
             msg = f"Error with OpenAI API: {e}"
 
-    st.session_state["messages"].append({"role": "assistant", "content": msg})
-    st.chat_message("assistant").write(msg)
+        st.session_state.messages.append({"role": "assistant", "content": msg})
+        st.chat_message("assistant").write(msg)
