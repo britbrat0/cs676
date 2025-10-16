@@ -1,41 +1,31 @@
 import os
-from dotenv import load_dotenv
 import streamlit as st
 from openai import OpenAI
 from serpapi import GoogleSearch
 import json
 
-# Load .env file locally (ignored in Streamlit Cloud)
-load_dotenv()
+# -----------------------------
+# Load .env locally (if available)
+# -----------------------------
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ModuleNotFoundError:
+    pass  # .env not available, likely running on Streamlit Cloud
 
-# Retrieve keys (from .env or Streamlit secrets)
+# -----------------------------
+# Get API keys from .env or Streamlit Secrets
+# -----------------------------
 openai_api_key = os.getenv("OPENAI_API_KEY", st.secrets.get("OPENAI_API_KEY"))
 serpapi_key = os.getenv("SERPAPI_KEY", st.secrets.get("SERPAPI_KEY"))
 
-# -----------------------------
-# Streamlit Sidebar: API setup
-# -----------------------------
-with st.sidebar:
-    st.title("🔑 API Configuration")
-    openai_api_key = st.secrets.get("OPENAI_API_KEY")
-    serpapi_key = st.secrets.get("SERPAPI_KEY")
-    st.markdown("[Get OpenAI API key](https://platform.openai.com/account/api-keys)")
-    st.markdown("[Get SerpAPI key](https://serpapi.com/)")
-    st.markdown("[View the source code](https://github.com/britbrat0/cs676)")
-
-# -----------------------------
-# App Title
-# -----------------------------
-st.title("🌐 Credibility Chatbot + Web Search")
-st.caption("🚀 Analyze URLs or ask questions with real-time web results")
+if not openai_api_key:
+    st.error("OpenAI API key not found. Set OPENAI_API_KEY in .env or Streamlit Secrets.")
+    st.stop()
 
 # -----------------------------
 # Initialize OpenAI client
 # -----------------------------
-if not openai_api_key:
-    st.error("Please add your OpenAI API key to continue.")
-    st.stop()
-
 client = OpenAI(api_key=openai_api_key)
 
 # -----------------------------
@@ -48,7 +38,7 @@ for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 # -----------------------------
-# Helper: Perform web search
+# Helper: Web search using SerpAPI
 # -----------------------------
 def search_web(query: str):
     """Retrieve short summaries from top search results."""
@@ -65,7 +55,7 @@ def search_web(query: str):
     return ["No results found."]
 
 # -----------------------------
-# Helper: Analyze URL credibility
+# Helper: Assess URL credibility
 # -----------------------------
 def assess_url_credibility(url: str):
     try:
@@ -82,14 +72,14 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
-    # Case 1: URL → Credibility check
+    # Case 1: URL → Credibility scoring
     if prompt.startswith("http"):
         with st.spinner("🔍 Assessing credibility..."):
             result = assess_url_credibility(prompt)
         st.json(result)
         st.session_state.messages.append({"role": "assistant", "content": json.dumps(result)})
 
-    # Case 2: General question → Web search + GPT response
+    # Case 2: General question → Web search + GPT
     else:
         with st.spinner("🌎 Searching the web..."):
             snippets = search_web(prompt)
@@ -97,7 +87,7 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
 
         system_message = {
             "role": "system",
-            "content": f"Use the following recent web information to answer:\n{context}"
+            "content": f"Use the following web results to answer the user's question:\n{context}"
         }
 
         messages = [system_message] + st.session_state.messages
