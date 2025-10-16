@@ -1,48 +1,33 @@
 [project]
-name = "credibility-assessment-app"
+name = "credibility_chatbot"
 version = "0.1.0"
-description = "Hybrid rule-based and ML-powered article credibility assessment API integrated with chatbot systems."
-authors = [
-    { name = "Brittany D'Erasmo", email = "your_email@example.com" }
-]
+description = "A hybrid rule-based and ML credibility assessment chatbot with web search integration."
+authors = [{ name = "Brittany D'Erasmo" }]
 readme = "README.md"
-license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 
-# Dependencies your project needs to run
+# -----------------------------
+# Dependencies
+# -----------------------------
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "scikit-learn>=1.4.0",
-    "joblib>=1.3.2",
+    "streamlit>=1.36.0",
+    "openai>=1.3.0",
+    "serpapi>=0.1.5",
+    "beautifulsoup4>=4.12.0",
     "requests>=2.31.0",
-    "beautifulsoup4>=4.12.3",
-    "pandas>=2.2.2",
-    "numpy>=1.26.4",
-    "tldextract>=5.1.1",
-    "transformers>=4.42.0",
-    "torch>=2.3.0",
-    "validators>=0.22.0"
+    "scikit-learn>=1.3.0",
+    "numpy>=1.25.0",
+    "pandas>=2.1.0",
+    "lxml>=4.9.3",
+    "python-dotenv>=1.0.0"
 ]
 
 [tool.uv]
-# Define your main app entry point
-default-command = "start"
+package = true
 
 [tool.uv.scripts]
-# Start FastAPI server for local dev
-start = "uvicorn src.credibility_app.app:app --host 0.0.0.0 --port 8000 --reload"
-
-# Optionally, run background data/model retraining
-train = "python src/credibility_app/train_model.py"
-
-# For testing model predictions locally
-test = "python src/credibility_app/test_predictions.py"
-
-# Run linting and formatting (if you add Ruff or Black)
-lint = "ruff check ."
-format = "black ."
+app = "streamlit run src/credibility_chatbot/app.py"
 
 [build-system]
-requires = ["setuptools>=67", "wheel"]
+requires = ["setuptools>=65.0", "wheel"]
 build-backend = "setuptools.build_meta"
