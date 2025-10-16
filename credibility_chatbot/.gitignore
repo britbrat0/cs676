@@ -1,0 +1,19 @@
+# Ignore environment files
+.env
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore model files and data
+*.pkl
+*.csv
+*.json
+
+# Ignore virtual environment folders
+.venv/
+env/
+venv/
+
+# Ignore Streamlit logs and temporary files
+.streamlit/
