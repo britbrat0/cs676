@@ -1,7 +1,16 @@
+import os
+from dotenv import load_dotenv
 import streamlit as st
 from openai import OpenAI
 from serpapi import GoogleSearch
 import json
+
+# Load .env file locally (ignored in Streamlit Cloud)
+load_dotenv()
+
+# Retrieve keys (from .env or Streamlit secrets)
+openai_api_key = os.getenv("OPENAI_API_KEY", st.secrets.get("OPENAI_API_KEY"))
+serpapi_key = os.getenv("SERPAPI_KEY", st.secrets.get("SERPAPI_KEY"))
 
 # -----------------------------
 # Streamlit Sidebar: API setup
