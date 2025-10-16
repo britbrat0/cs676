@@ -1,3 +1,10 @@
+try:
+    from google_search_results import GoogleSearch
+    st.write("✅ GoogleSearch imported successfully!")
+except ModuleNotFoundError:
+    st.error("❌ google-search-results not installed. Check requirements.txt.")
+    st.stop()
+    
 import os
 import streamlit as st
 import json
