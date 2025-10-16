@@ -1,12 +1,3 @@
-import streamlit as st
-
-try:
-    import serpapi
-    st.write("SerpAPI is installed!")
-except ModuleNotFoundError:
-    st.error("SerpAPI NOT found! Check requirements.txt and reboot the app.")
-    st.stop()
-
 import os
 import streamlit as st
 import json
@@ -21,10 +12,11 @@ except ModuleNotFoundError:
     st.stop()
 
 try:
-    from serpapi import GoogleSearch
+    from google_search_results import GoogleSearch
 except ModuleNotFoundError:
-    st.error("SerpAPI package not installed. Check requirements.txt.")
+    st.error("google-search-results package not installed. Check requirements.txt.")
     st.stop()
+
 
 # -----------------------------
 # API Keys from Streamlit Secrets
