@@ -1,19 +1,67 @@
-# Ignore environment files
-.env
+# ==============================
+# Python and Environment Files
+# ==============================
 
-# Ignore Python cache files
+# Byte-compiled / cache files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
-# Ignore model files and data
-*.pkl
-*.csv
-*.json
-
-# Ignore virtual environment folders
+# Virtual environments
 .venv/
 env/
 venv/
 
-# Ignore Streamlit logs and temporary files
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==============================
+# Credentials and Environment
+# ==============================
+.env
+*.env
+apikeys.json
+
+# ==============================
+# Logs and Streamlit files
+# ==============================
 .streamlit/
+logs/
+*.log
+
+# ==============================
+# Data and Models
+# ==============================
+*.pkl
+*.h5
+*.csv
+*.json
+*.db
+*.sqlite3
+data/
+
+# ==============================
+# IDE and System Files
+# ==============================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ==============================
+# Notebook Checkpoints
+# ==============================
+.ipynb_checkpoints/
