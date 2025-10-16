@@ -26,7 +26,7 @@ dependencies = [
 package = true
 
 [tool.uv.scripts]
-app = "streamlit run src/credibility_chatbot/app.py"
+app = "streamlit run app.py"
 
 [build-system]
 requires = ["setuptools>=65.0", "wheel"]
