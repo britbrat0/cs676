@@ -12,11 +12,10 @@ except ModuleNotFoundError:
     raise
 
 try:
-    from google_search_results import GoogleSearch
-        from serpapi.google_search import GoogleSearch
-    except ModuleNotFoundError:
-        print("google-search-results package not installed. Check requirements.txt.")
-        raise
+    from serpapi import GoogleSearch
+except ModuleNotFoundError:
+    print("⚠️ serpapi package not installed. Check your dependencies.")
+    raise
 
 
 # -----------------------------
