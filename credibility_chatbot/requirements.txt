@@ -10,4 +10,4 @@ lxml>=4.9.3
 python-dotenv>=1.0.0
 tldextract>=3.4.0
 validators>=0.20.0
-
+serpapi
