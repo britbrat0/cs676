@@ -186,20 +186,16 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
                     st.warning("No search results found.")
                     st.stop()
 
-                st.subheader("Credibility of Sources")
+                # Assess credibility for each result (used only for GPT context)
                 for r in web_results:
                     score = assess_url(r["link"]) if r["link"] else {"score": 0.0, "explanation": "No link"}
-                    st.write(f"**{r['title']}**")
-                    st.write(f"🔗 {r['link']}")
-                    st.write(f"🧭 Credibility Score: {score.get('score', 0):.2f}")
-                    st.caption(score.get("explanation", ""))
-                    st.divider()
                     r["credibility_score"] = score.get("score", 0)
                     r["credibility_explanation"] = score.get("explanation", "")
 
-                # Prepare context for GPT
+                # Prepare context for GPT without displaying individual sources
                 context = "\n\n".join(
-                    [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" for r in web_results]
+                    [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" 
+                     for r in web_results]
                 )
 
                 system_message = {
@@ -213,6 +209,7 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
 
                 messages = [system_message] + st.session_state.messages
 
+                # Generate GPT response
                 try:
                     with st.spinner("🤖 Generating answer..."):
                         response = client.chat.completions.create(
