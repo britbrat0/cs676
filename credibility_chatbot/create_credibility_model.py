@@ -1,6 +1,6 @@
 """
 Create a simple ML model for credibility scoring and save it as credibility_model.pkl.
-This is a demonstration model for your hybrid credibility system.
+This is a demonstration model for the hybrid credibility system.
 """
 
 import pandas as pd
