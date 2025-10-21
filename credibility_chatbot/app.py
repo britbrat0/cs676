@@ -93,14 +93,18 @@ def search_web(query: str):
 # Helper: Assess URL credibility
 # -----------------------------
 # Wraps the credibility scoring function from assess_credibility.py.
-# Returns a dictionary with a score (0–1) and a textual explanation.
+# Returns a dictionary with a score (0–1), star rating, and textual explanation.
 # Handles exceptions and returns default score if analysis fails.
 def assess_url(url: str):
     try:
         from assess_credibility import assess_url_credibility
-        return assess_url_credibility(url)
+        result = assess_url_credibility(url)
+        score = result.get("score", 0.0)
+        stars = int(round(score * 5))
+        result["stars"] = "★" * stars + "☆" * (5 - stars)
+        return result
     except Exception as e:
-        return {"score": 0.0, "explanation": f"Error analyzing URL: {e}"}
+        return {"score": 0.0, "stars": "☆☆☆☆☆", "explanation": f"Error analyzing URL: {e}"}
 
 # -----------------------------
 # Main interaction with intent detection
@@ -117,20 +121,18 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
     # -----------------------------
     # Step 1: Check if input is a URL
     # -----------------------------
-    # If user input starts with "http", we assume it's a URL.
-    # Evaluate the credibility of the URL and display results.
     if prompt.startswith("http"):
         with st.spinner("🔍 Assessing credibility..."):
             result = assess_url(prompt)
-        st.json(result)
+        # Display score with stars and explanation
+        st.markdown(f"**Credibility Score: {result['stars']}**")
+        st.caption(result.get("explanation", ""))
         st.session_state.messages.append({"role": "assistant", "content": json.dumps(result)})
 
     else:
         # -----------------------------
         # Step 2: Check for trivial messages
         # -----------------------------
-        # Compare input to a predefined list of greetings or casual chat phrases.
-        # If input matches, skip web search and provide a direct response.
         NO_SEARCH_KEYWORDS = [
             "hello", "hi", "hey", "good morning", "good afternoon",
             "thanks", "thank you", "how are you"
@@ -146,8 +148,6 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
             # -----------------------------
             # Step 3: Optional GPT intent classification
             # -----------------------------
-            # Ask GPT whether the input requires a web search.
-            # Only perform web search if GPT returns "SEARCH"; otherwise, skip.
             try:
                 intent_prompt = f"""
                 Classify the following message:
@@ -177,8 +177,6 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
                 # -----------------------------
                 # Step 4: Web search + credibility scoring + GPT response
                 # -----------------------------
-                # Perform web search, assess credibility for each result,
-                # construct context for GPT, and generate final answer.
                 with st.spinner("🌎 Searching the web..."):
                     web_results = search_web(prompt)
 
@@ -186,15 +184,16 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
                     st.warning("No search results found.")
                     st.stop()
 
-                # Assess credibility for each result (used only for GPT context)
+                # Assess credibility for each result (stars + explanation)
                 for r in web_results:
-                    score = assess_url(r["link"]) if r["link"] else {"score": 0.0, "explanation": "No link"}
-                    r["credibility_score"] = score.get("score", 0)
-                    r["credibility_explanation"] = score.get("explanation", "")
+                    score_dict = assess_url(r["link"]) if r["link"] else {"score": 0.0, "stars": "☆☆☆☆☆", "explanation": "No link"}
+                    r["credibility_score"] = score_dict.get("score", 0)
+                    r["credibility_explanation"] = score_dict.get("explanation", "")
+                    r["credibility_stars"] = score_dict.get("stars", "☆☆☆☆☆")
 
                 # Prepare context for GPT without displaying individual sources
                 context = "\n\n".join(
-                    [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" 
+                    [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility: {r['credibility_stars']} ({r['credibility_score']:.2f}) - {r['credibility_explanation']}" 
                      for r in web_results]
                 )
 
@@ -202,7 +201,7 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
                     "role": "system",
                     "content": (
                         "You are a helpful assistant. Use the web results and their credibility scores to answer the user's question. "
-                        "Give preference to highly credible sources.\n\n"
+                        "Highlight the credibility rating in your answer.\n\n"
                         f"{context}"
                     )
                 }
