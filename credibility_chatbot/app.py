@@ -1,9 +1,11 @@
 # -----------------------------
 # Standard Python imports
 # -----------------------------
-# Import essential libraries: os for environment operations,
-# streamlit for building the web app, and json for structured data handling.
-# These are foundational for the chatbot interface and storing results.
+# Import standard libraries needed for the chatbot.
+# - os: for operating system operations like file paths.
+# - streamlit: to build the web app interface.
+# - json: for structured data handling and storing results.
+# These imports are essential for session management and UI rendering.
 import os
 import streamlit as st
 import json
@@ -11,9 +13,10 @@ import json
 # -----------------------------
 # Import OpenAI and SerpAPI
 # -----------------------------
-# Attempt to import the OpenAI client and SerpAPI client.
-# If these packages are not installed, provide a clear error message.
-# This ensures the app fails gracefully if dependencies are missing.
+# Attempt to import OpenAI client to interact with GPT models.
+# Attempt to import SerpAPI client to perform web searches.
+# If these packages are not installed, provide informative errors.
+# Ensures graceful failure and user guidance on missing dependencies.
 try:
     from openai import OpenAI
 except ModuleNotFoundError:
@@ -26,12 +29,13 @@ except ModuleNotFoundError:
     print("google-search-results package not installed. Check requirements.txt.")
     raise
 
-
 # -----------------------------
 # API Keys from Streamlit Secrets
 # -----------------------------
-# Retrieve the OpenAI and SerpAPI keys from Streamlit's secrets manager.
-# Keys are required for API access; if missing, the app stops and prompts the user.
+# Retrieve API keys from Streamlit's secure secrets manager.
+# The OpenAI key allows GPT model calls.
+# The SerpAPI key allows performing web searches.
+# If keys are missing, stop the app and prompt the user to configure them.
 openai_api_key = st.secrets.get("OPENAI_API_KEY")
 serpapi_key = st.secrets.get("SERPAPI_KEY")
 
@@ -42,15 +46,17 @@ if not openai_api_key:
 # -----------------------------
 # Initialize OpenAI client
 # -----------------------------
-# Create an OpenAI client instance using the API key.
-# This client will be used to call GPT models for chat responses.
+# Create an OpenAI client using the provided API key.
+# This client will be used to send prompts and receive GPT responses.
+# Centralizes GPT calls and handles authentication.
 client = OpenAI(api_key=openai_api_key)
 
 # -----------------------------
 # Chat session state
 # -----------------------------
-# Initialize the chat session state in Streamlit to store conversation history.
-# If this is the first interaction, start with a welcome message.
+# Initialize or retrieve the chat session history stored in Streamlit.
+# This allows the chatbot to maintain conversation context across messages.
+# If this is the first interaction, start with a friendly assistant message.
 if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant", "content": "Hi! Paste a URL or ask a question."}]
 
@@ -61,9 +67,9 @@ for msg in st.session_state.messages:
 # -----------------------------
 # Helper: Web search using SerpAPI
 # -----------------------------
-# Define a function to search the web for a query using SerpAPI.
-# Returns a list of top search results with title, link, and snippet.
-# Handles exceptions and missing API keys gracefully.
+# Defines a function to search the web for a given query using SerpAPI.
+# Returns a list of top search results containing title, link, and snippet.
+# Handles missing API keys and exceptions gracefully, providing informative feedback.
 def search_web(query: str):
     if not serpapi_key:
         return []
@@ -86,9 +92,9 @@ def search_web(query: str):
 # -----------------------------
 # Helper: Assess URL credibility
 # -----------------------------
-# Wrap the credibility scoring function from assess_credibility.py.
-# Returns a JSON-like dictionary with score and explanation.
-# Handles exceptions and returns a default 0 score if analysis fails.
+# Wraps the credibility scoring function from assess_credibility.py.
+# Returns a dictionary with a score (0–1) and a textual explanation.
+# Handles exceptions and returns default score if analysis fails.
 def assess_url(url: str):
     try:
         from assess_credibility import assess_url_credibility
@@ -97,71 +103,125 @@ def assess_url(url: str):
         return {"score": 0.0, "explanation": f"Error analyzing URL: {e}"}
 
 # -----------------------------
-# Main interaction
+# Main interaction with intent detection
 # -----------------------------
-# Main chat input handler. Determines whether the input is a URL or general query.
-# For URLs: run credibility scoring.
-# For questions: perform web search, assess credibility of results, then query GPT.
+# Handles user input and decides whether to perform:
+# 1. URL credibility scoring
+# 2. Skip web search for trivial greetings or casual chat
+# 3. Web search + credibility scoring + GPT for questions
+# Uses a hybrid approach: keyword list for trivial messages + GPT intent check for other inputs.
 if prompt := st.chat_input("Ask a question or enter a URL"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
+    # -----------------------------
+    # Step 1: Check if input is a URL
+    # -----------------------------
+    # If user input starts with "http", we assume it's a URL.
+    # Evaluate the credibility of the URL and display results.
     if prompt.startswith("http"):
-        # URL → credibility scoring
         with st.spinner("🔍 Assessing credibility..."):
             result = assess_url(prompt)
         st.json(result)
         st.session_state.messages.append({"role": "assistant", "content": json.dumps(result)})
 
     else:
-        # General question → web search + credibility scoring + GPT
-        with st.spinner("🌎 Searching the web..."):
-            web_results = search_web(prompt)
+        # -----------------------------
+        # Step 2: Check for trivial messages
+        # -----------------------------
+        # Compare input to a predefined list of greetings or casual chat phrases.
+        # If input matches, skip web search and provide a direct response.
+        NO_SEARCH_KEYWORDS = [
+            "hello", "hi", "hey", "good morning", "good afternoon",
+            "thanks", "thank you", "how are you"
+        ]
+        prompt_clean = prompt.lower().strip()
 
-        if not web_results:
-            st.warning("No search results found.")
-            st.stop()
+        if any(kw in prompt_clean for kw in NO_SEARCH_KEYWORDS):
+            msg = "Hello! How can I help you today?"
+            st.session_state.messages.append({"role": "assistant", "content": msg})
+            st.chat_message("assistant").write(msg)
 
-        # Assess credibility for each result
-        st.subheader("Credibility of Sources")
-        for r in web_results:
-            score = assess_url(r["link"]) if r["link"] else {"score": 0.0, "explanation": "No link"}
-            st.write(f"**{r['title']}**")
-            st.write(f"🔗 {r['link']}")
-            st.write(f"🧭 Credibility Score: {score.get('score', 0):.2f}")
-            st.caption(score.get("explanation", ""))
-            st.divider()
-            r["credibility_score"] = score.get("score", 0)
-            r["credibility_explanation"] = score.get("explanation", "")
+        else:
+            # -----------------------------
+            # Step 3: Optional GPT intent classification
+            # -----------------------------
+            # Ask GPT whether the input requires a web search.
+            # Only perform web search if GPT returns "SEARCH"; otherwise, skip.
+            try:
+                intent_prompt = f"""
+                Classify the following message:
+                '{prompt}'
 
-        # Prepare context for GPT
-        context = "\n\n".join(
-            [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" for r in web_results]
-        )
+                Reply with either:
+                - SEARCH: if the message is a question that requires web lookup
+                - NO_SEARCH: if it's a greeting, thanks, or casual chat
+                Only reply with SEARCH or NO_SEARCH.
+                """
 
-        # System message to instruct GPT to use web results and credibility scores
-        system_message = {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant. Use the web results and their credibility scores to answer the user's question. "
-                "Give preference to highly credible sources.\n\n"
-                f"{context}"
-            )
-        }
-
-        messages = [system_message] + st.session_state.messages
-
-        # Generate GPT response
-        try:
-            with st.spinner("🤖 Generating answer..."):
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",  # smaller + faster than full GPT-4
-                    messages=messages
+                intent_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": intent_prompt}]
                 )
-            msg = response.choices[0].message.content
-        except Exception as e:
-            msg = f"Error with OpenAI API: {e}"
 
-        # Append GPT response to chat session and display
-        st.session_state.messages.append({"role": "assistant", "content": msg})
-        st.chat_message("assistant").write(msg)
+                intent = intent_response.choices[0].message.content.strip()
+            except Exception:
+                intent = "SEARCH"
+
+            if intent == "NO_SEARCH":
+                msg = "Hello! How can I help you?"
+                st.session_state.messages.append({"role": "assistant", "content": msg})
+                st.chat_message("assistant").write(msg)
+
+            else:
+                # -----------------------------
+                # Step 4: Web search + credibility scoring + GPT response
+                # -----------------------------
+                # Perform web search, assess credibility for each result,
+                # construct context for GPT, and generate final answer.
+                with st.spinner("🌎 Searching the web..."):
+                    web_results = search_web(prompt)
+
+                if not web_results:
+                    st.warning("No search results found.")
+                    st.stop()
+
+                st.subheader("Credibility of Sources")
+                for r in web_results:
+                    score = assess_url(r["link"]) if r["link"] else {"score": 0.0, "explanation": "No link"}
+                    st.write(f"**{r['title']}**")
+                    st.write(f"🔗 {r['link']}")
+                    st.write(f"🧭 Credibility Score: {score.get('score', 0):.2f}")
+                    st.caption(score.get("explanation", ""))
+                    st.divider()
+                    r["credibility_score"] = score.get("score", 0)
+                    r["credibility_explanation"] = score.get("explanation", "")
+
+                # Prepare context for GPT
+                context = "\n\n".join(
+                    [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" for r in web_results]
+                )
+
+                system_message = {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant. Use the web results and their credibility scores to answer the user's question. "
+                        "Give preference to highly credible sources.\n\n"
+                        f"{context}"
+                    )
+                }
+
+                messages = [system_message] + st.session_state.messages
+
+                try:
+                    with st.spinner("🤖 Generating answer..."):
+                        response = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=messages
+                        )
+                    msg = response.choices[0].message.content
+                except Exception as e:
+                    msg = f"Error with OpenAI API: {e}"
+
+                st.session_state.messages.append({"role": "assistant", "content": msg})
+                st.chat_message("assistant").write(msg)
