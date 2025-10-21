@@ -47,16 +47,22 @@ for msg in st.session_state.messages:
 # -----------------------------
 def search_web(query: str):
     if not serpapi_key:
-        return ["No SerpAPI key configured."]
+        return []
     try:
         params = {"q": query, "api_key": serpapi_key, "num": 3}
         search = GoogleSearch(params)
         results = search.get_dict()
+        snippets = []
         if "organic_results" in results:
-            return [r.get("snippet", "") for r in results["organic_results"][:3]]
+            for r in results["organic_results"][:3]:
+                snippets.append({
+                    "title": r.get("title", "No title"),
+                    "link": r.get("link", ""),
+                    "snippet": r.get("snippet", "")
+                })
+        return snippets
     except Exception as e:
-        return [f"Search error: {e}"]
-    return ["No results found."]
+        return [{"title": "Error", "snippet": str(e), "link": ""}]
 
 # -----------------------------
 # Helper: Assess URL credibility
@@ -81,18 +87,48 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
             result = assess_url(prompt)
         st.json(result)
         st.session_state.messages.append({"role": "assistant", "content": json.dumps(result)})
+
     else:
-        # General question → web search + GPT
+        # General question → web search + credibility scoring + GPT
         with st.spinner("🌎 Searching the web..."):
-            snippets = search_web(prompt)
-        context = "\n".join(snippets)
-        system_message = {"role": "system", "content": f"Use the following web results to answer the user's question:\n{context}"}
+            web_results = search_web(prompt)
+
+        if not web_results:
+            st.warning("No search results found.")
+            st.stop()
+
+        # Assess credibility for each result
+        st.subheader("Credibility of Sources")
+        for r in web_results:
+            score = assess_url(r["link"]) if r["link"] else {"score": 0.0, "explanation": "No link"}
+            st.write(f"**{r['title']}**")
+            st.write(f"🔗 {r['link']}")
+            st.write(f"🧭 Credibility Score: {score.get('score', 0):.2f}")
+            st.caption(score.get("explanation", ""))
+            st.divider()
+            r["credibility_score"] = score.get("score", 0)
+            r["credibility_explanation"] = score.get("explanation", "")
+
+        # Prepare context for GPT
+        context = "\n\n".join(
+            [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" for r in web_results]
+        )
+
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant. Use the web results and their credibility scores to answer the user's question. "
+                "Give preference to highly credible sources.\n\n"
+                f"{context}"
+            )
+        }
+
         messages = [system_message] + st.session_state.messages
 
         try:
             with st.spinner("🤖 Generating answer..."):
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o-mini",  # smaller + faster than full GPT-4
                     messages=messages
                 )
             msg = response.choices[0].message.content
