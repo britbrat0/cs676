@@ -1,3 +1,9 @@
+# -----------------------------
+# Standard Python imports
+# -----------------------------
+# Import essential libraries: os for environment operations,
+# streamlit for building the web app, and json for structured data handling.
+# These are foundational for the chatbot interface and storing results.
 import os
 import streamlit as st
 import json
@@ -5,6 +11,9 @@ import json
 # -----------------------------
 # Import OpenAI and SerpAPI
 # -----------------------------
+# Attempt to import the OpenAI client and SerpAPI client.
+# If these packages are not installed, provide a clear error message.
+# This ensures the app fails gracefully if dependencies are missing.
 try:
     from openai import OpenAI
 except ModuleNotFoundError:
@@ -21,6 +30,8 @@ except ModuleNotFoundError:
 # -----------------------------
 # API Keys from Streamlit Secrets
 # -----------------------------
+# Retrieve the OpenAI and SerpAPI keys from Streamlit's secrets manager.
+# Keys are required for API access; if missing, the app stops and prompts the user.
 openai_api_key = st.secrets.get("OPENAI_API_KEY")
 serpapi_key = st.secrets.get("SERPAPI_KEY")
 
@@ -31,20 +42,28 @@ if not openai_api_key:
 # -----------------------------
 # Initialize OpenAI client
 # -----------------------------
+# Create an OpenAI client instance using the API key.
+# This client will be used to call GPT models for chat responses.
 client = OpenAI(api_key=openai_api_key)
 
 # -----------------------------
 # Chat session state
 # -----------------------------
+# Initialize the chat session state in Streamlit to store conversation history.
+# If this is the first interaction, start with a welcome message.
 if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant", "content": "Hi! Paste a URL or ask a question."}]
 
+# Display existing messages in the chat interface
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 # -----------------------------
 # Helper: Web search using SerpAPI
 # -----------------------------
+# Define a function to search the web for a query using SerpAPI.
+# Returns a list of top search results with title, link, and snippet.
+# Handles exceptions and missing API keys gracefully.
 def search_web(query: str):
     if not serpapi_key:
         return []
@@ -67,6 +86,9 @@ def search_web(query: str):
 # -----------------------------
 # Helper: Assess URL credibility
 # -----------------------------
+# Wrap the credibility scoring function from assess_credibility.py.
+# Returns a JSON-like dictionary with score and explanation.
+# Handles exceptions and returns a default 0 score if analysis fails.
 def assess_url(url: str):
     try:
         from assess_credibility import assess_url_credibility
@@ -77,6 +99,9 @@ def assess_url(url: str):
 # -----------------------------
 # Main interaction
 # -----------------------------
+# Main chat input handler. Determines whether the input is a URL or general query.
+# For URLs: run credibility scoring.
+# For questions: perform web search, assess credibility of results, then query GPT.
 if prompt := st.chat_input("Ask a question or enter a URL"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
@@ -114,6 +139,7 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
             [f"Source: {r['link']}\nSnippet: {r['snippet']}\nCredibility Score: {r['credibility_score']}" for r in web_results]
         )
 
+        # System message to instruct GPT to use web results and credibility scores
         system_message = {
             "role": "system",
             "content": (
@@ -125,6 +151,7 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
 
         messages = [system_message] + st.session_state.messages
 
+        # Generate GPT response
         try:
             with st.spinner("🤖 Generating answer..."):
                 response = client.chat.completions.create(
@@ -135,5 +162,6 @@ if prompt := st.chat_input("Ask a question or enter a URL"):
         except Exception as e:
             msg = f"Error with OpenAI API: {e}"
 
+        # Append GPT response to chat session and display
         st.session_state.messages.append({"role": "assistant", "content": msg})
         st.chat_message("assistant").write(msg)
