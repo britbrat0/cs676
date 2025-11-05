@@ -135,7 +135,7 @@ If this runs and emits output (dialogue, summary), the setup worked.
 
 Because TinyTroupe is early-stage, occasional breaking changes or quirks can be expected; always refer to the upstream repo for updates.
 
-##**Common Installation Issues and Troubleshooting Guidance**
+## **Common Installation Issues and Troubleshooting Guidance**
 
 **Missing build dependencies (macOS / Linux):**
 
@@ -212,7 +212,7 @@ logging.getLogger("tinytroupe").setLevel(logging.DEBUG)
 
 Inspect logs of API requests, prompt contents, errors, etc.
 
-##**Configuration Options**
+## **Configuration Options**
 
 **Persona/Agent configuration**
 
