@@ -47,7 +47,7 @@ cd TinyTroupe
 pip install -e .
 ```
 
-	Dependencies are included in pyproject.toml in the repository.
+Dependencies are included in pyproject.toml in the repository.
 
 3. **Configure credentials and settings**
 
