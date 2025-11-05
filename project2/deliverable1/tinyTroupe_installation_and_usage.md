@@ -1,4 +1,4 @@
-#**TinyTroupe Installation and Usage**
+# **TinyTroupe Installation and Usage**
 
 ## **Introduction**
 
@@ -252,15 +252,10 @@ Use `ResultsReducer` (if available) or create custom reducers to aggregate metri
 
 Logging and checkpointing: periodically persist the simulation state or partial dialogues for debugging, inspection, or recovery.
 
-##**References**
+## **References**
 
 https://github.com/microsoft/TinyTroupe
 
 https://arxiv.org/abs/2507.09788v1
 
 https://www.piwheels.org/project/tinytroupe/
-
-
-```python
-
-```
