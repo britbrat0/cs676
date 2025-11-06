@@ -138,10 +138,27 @@ feature_inputs = {
     "Contextual Info": contextual_info
 }
 
-# Persona selection
+# Initialize personas in session_state
+if "personas" not in st.session_state:
+    try:
+        with open("personas.json", "r", encoding="utf-8") as f:
+            st.session_state.personas = json.load(f)
+    except:
+        st.session_state.personas = []
+
+# Build options for multiselect
 persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
-selected_personas_str = st.multiselect("Select Personas", persona_options)
-selected_personas = [p for p in st.session_state.personas if f"{p['name']} ({p['occupation']})" in selected_personas_str]
+selected_personas_str = st.multiselect(
+    "Select Personas",
+    options=persona_options,
+    key="selected_personas"
+)
+
+# Get actual persona objects
+selected_personas = [
+    p for p in st.session_state.personas
+    if f"{p['name']} ({p['occupation']})" in selected_personas_str
+]
 
 # User question
 user_question = st.text_input("Enter your question for the personas")
