@@ -62,10 +62,6 @@ with st.sidebar.expander("Create New Persona"):
             st.error("Name is required.")
 
 
-persona_options = [f"{p['name']} ({p['occupation']})" for p in persona_data]
-selected_personas = st.multiselect("Select Personas", options=persona_options)
-
-
 # -------------------------
 # Color and Formatting Helpers
 # -------------------------
