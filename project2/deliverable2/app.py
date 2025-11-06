@@ -15,6 +15,9 @@ openai.api_key = st.secrets["OPENAI_API_KEY"]
 with open("personas.json", "r", encoding="utf-8") as f:
     persona_data = json.load(f)
 
+if "personas" not in st.session_state:
+    st.session_state.personas = persona_data
+
 def get_persona_by_id(pid):
     for p in persona_data:
         if p["id"] == pid:
