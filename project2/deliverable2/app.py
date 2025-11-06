@@ -2,9 +2,7 @@ import streamlit as st
 import openai
 import json
 import re
-import pandas as pd
 import matplotlib.pyplot as plt
-from io import BytesIO
 
 # -------------------------
 # API Setup
@@ -18,9 +16,7 @@ def load_personas():
     try:
         with open("personas.json", "r", encoding="utf-8") as f:
             data = json.load(f)
-            if not data:
-                st.warning("⚠️ personas.json is empty.")
-            return data
+            return data if data else []
     except FileNotFoundError:
         st.error("❌ personas.json not found. Please upload it to your repo.")
         return []
@@ -30,7 +26,16 @@ def load_personas():
 
 # Initialize personas in session_state
 if "personas" not in st.session_state:
-    st.session_state.personas = load_personas()
+    loaded_personas = load_personas()
+    st.session_state.personas = loaded_personas
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = ""
+
+def get_persona_by_id(pid):
+    for p in st.session_state.personas:
+        if p["id"] == pid:
+            return p
+    return None
 
 # -------------------------
 # Sidebar: Create Persona
@@ -53,12 +58,12 @@ with st.sidebar.expander("Create New Persona"):
             }
             st.session_state.personas.append(new_persona)
             st.success(f"Persona '{new_name}' added!")
-            st.experimental_rerun()  # rerun to update multiselect options
+            st.experimental_rerun()
         else:
             st.error("Name is required.")
 
 # -------------------------
-# Color and Formatting Helpers
+# Colors and formatting
 # -------------------------
 PERSONA_COLORS = {
     "Sophia Martinez": "#E6194B",
@@ -86,9 +91,9 @@ def format_response_line(text, persona_name):
     highlight = detect_insight_or_concern(text)
     background = ""
     if highlight == "insight":
-        background = "background-color: #d4edda;"  # green
+        background = "background-color: #d4edda;"
     elif highlight == "concern":
-        background = "background-color: #f8d7da;"  # red
+        background = "background-color: #f8d7da;"
     return f'<div style="color:{color};{background}padding:4px;margin:2px 0;border-left:4px solid {color};white-space:pre-wrap;">{text}</div>'
 
 # -------------------------
@@ -99,12 +104,18 @@ def build_prompt(personas, feature_inputs, conversation_history=None):
         f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})"
         for p in personas
     ])
-    feature_description = "\n".join([f"{k}: {v}" for k, v in feature_inputs.items()])
+    feature_description = ""
+    for k, v in feature_inputs.items():
+        if isinstance(v, list):
+            v_text = ", ".join([f for f in v]) if v else "None"
+        else:
+            v_text = v.strip() if v else "None"
+        feature_description += f"{k}:\n{v_text}\n\n"
     prompt = f"""
 Personas:
 {persona_descriptions}
 
-Feature:
+Feature Inputs:
 {feature_description}
 
 Simulate a realistic conversation between these personas about this feature.
@@ -134,36 +145,20 @@ def generate_response(feature_inputs, personas, conversation_history=None):
 def generate_feedback_report(conversation_history):
     insights = re.findall(r'(?i)(?:great|improve|helpful|benefit|like)', conversation_history)
     concerns = re.findall(r'(?i)(?:concern|problem|issue|difficult|worry)', conversation_history)
-
     acceptance_rate = round((len(insights) / (len(insights) + len(concerns) + 1)) * 100, 1)
     usage_likelihood = min(100, acceptance_rate + 10)
 
-    report_text = f"""
-### 🧭 Feedback Report
-
-**Key Metrics**
-- Acceptance Rate: {acceptance_rate}%
-- Usage Likelihood: {usage_likelihood}%
-
-**Insights**
-{len(insights)} positive themes identified (e.g., {', '.join(insights[:5])}).
-
-**Concerns**
-{len(concerns)} areas of hesitation or challenge (e.g., {', '.join(concerns[:5])}).
-
-**Recommendations**
-- Address top usability issues mentioned in concerns.
-- Reinforce key benefits appreciated by multiple personas.
-- Prioritize changes that balance ease of use with perceived value.
-"""
-
-    st.markdown(report_text)
+    st.markdown(f"### 🧭 Feedback Report")
+    st.markdown(f"**Key Metrics**\n- Acceptance Rate: {acceptance_rate}%\n- Usage Likelihood: {usage_likelihood}%")
+    st.markdown(f"**Insights** ({len(insights)} positive themes): {', '.join(insights[:5])}")
+    st.markdown(f"**Concerns** ({len(concerns)} issues): {', '.join(concerns[:5])}")
+    st.markdown(f"**Recommendations**\n- Address top usability issues mentioned in concerns.\n- Reinforce benefits noted by personas.\n- Prioritize changes that balance ease of use and value.")
 
     st.subheader("📊 Sentiment Breakdown")
     labels = ['Positive', 'Concerns']
     values = [len(insights), len(concerns)]
     fig, ax = plt.subplots()
-    ax.bar(labels, values, color=['#2ca02c', '#d62728'])
+    ax.bar(labels, values, color=['#28a745', '#dc3545'])
     st.pyplot(fig)
 
 # -------------------------
@@ -179,19 +174,14 @@ tabs = st.tabs([
 
 with tabs[0]:
     text_desc = st.text_area("Enter a textual description of the feature")
-
 with tabs[1]:
-    wireframes = st.file_uploader("Upload wireframes or mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
-
+    wireframes = st.file_uploader("Upload wireframes/mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
 with tabs[2]:
     visuals = st.file_uploader("Upload visuals or design elements", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
-
 with tabs[3]:
     functional_spec = st.text_area("Enter functional specifications")
-
 with tabs[4]:
     interaction_flow = st.text_area("Describe interaction flows")
-
 with tabs[5]:
     contextual_info = st.text_area("Provide any contextual information")
 
@@ -206,24 +196,24 @@ feature_inputs = {
 }
 
 # Persona selection
-persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
-selected_personas = st.multiselect("Select Personas", options=persona_options, key="selected_personas")
-personas = [p for p in st.session_state.personas if f"{p['name']} ({p['occupation']})" in selected_personas]
+if st.session_state.personas:
+    persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
+    selected_personas = st.multiselect("Select Personas", options=persona_options)
+    personas = [p for p in st.session_state.personas if f"{p['name']} ({p['occupation']})" in selected_personas]
+else:
+    personas = []
+    st.warning("No personas available. Add some in the sidebar.")
 
-# Initialize conversation
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = ""
-
-# User question
+# Conversation
 user_question = st.text_input("Enter your question for the personas")
 
 col1, col2 = st.columns(2)
 with col1:
     if st.button("Ask Personas"):
         if not personas:
-            st.warning("Please select at least one persona.")
+            st.warning("Select at least one persona.")
         elif not user_question:
-            st.warning("Please enter a question.")
+            st.warning("Enter a question.")
         else:
             st.session_state.conversation_history += f"\nUser: {user_question}\n\n"
             response = generate_response(feature_inputs, personas, st.session_state.conversation_history)
@@ -231,12 +221,13 @@ with col1:
 
 with col2:
     if st.button("Generate Report"):
-        generate_feedback_report(st.session_state.conversation_history)
+        if st.session_state.conversation_history:
+            generate_feedback_report(st.session_state.conversation_history)
+        else:
+            st.warning("No conversation to generate a report from.")
 
 st.markdown("---")
 st.markdown("### 💬 Conversation History")
-
-# Display conversation
 if st.session_state.conversation_history:
     for line in st.session_state.conversation_history.split("\n"):
         for p in personas:
