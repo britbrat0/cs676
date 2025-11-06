@@ -12,27 +12,14 @@ openai.api_key = st.secrets["OPENAI_API_KEY"]
 # -------------------------
 # Load Personas
 # -------------------------
-def load_personas():
-    try:
-        with open("personas.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, list):
-                return []
-            return data
-    except FileNotFoundError:
-        return []
-    except json.JSONDecodeError:
-        return []
-
-if "personas" not in st.session_state:
-    st.session_state.personas = load_personas()
+with open("personas.json", "r", encoding="utf-8") as f:
+    persona_data = json.load(f)
 
 def get_persona_by_id(pid):
-    for p in st.session_state.personas:
+    for p in persona_data:
         if p["id"] == pid:
             return p
     return None
-
 # -------------------------
 # Persona Colors
 # -------------------------
@@ -49,70 +36,113 @@ PERSONA_COLORS = {
     "Owen Gallagher": "#FABEBE",
 }
 
-def format_response_line(text, persona_name):
+def apply_color_to_text(text, persona_name):
     color = PERSONA_COLORS.get(persona_name, "#000000")
-    lower_text = text.lower()
+    return f'<span style="color: {color}; font-weight: bold;">{text}</span>'
+
+def format_response_line(text, persona_name, highlight=None):
+    color = PERSONA_COLORS.get(persona_name, "#000000")
     background = ""
-    if re.search(r'\b(think|like|improve|great|benefit|love|helpful)\b', lower_text):
+    if highlight == "insight":
         background = "background-color: #d4edda;"
-    elif re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard)\b', lower_text):
+    elif highlight == "concern":
         background = "background-color: #f8d7da;"
-    return f'<div style="color:{color};{background}padding:4px;margin:2px 0;border-left:4px solid {color};white-space:pre-wrap;">{text}</div>'
+    return f'<div style="color: {color}; {background} padding: 4px; margin: 2px 0; border-left: 4px solid {color}; white-space: pre-wrap;">{text}</div>'
+
+def detect_insight_or_concern(text):
+    lower_text = text.lower()
+    if re.search(r'\b(think|like|improve|great|benefit|love|helpful)\b', lower_text):
+        return "insight"
+    if re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard)\b', lower_text):
+        return "concern"
+    return None
 
 # -------------------------
-# GPT Functions
+# Build GPT Prompt
 # -------------------------
 def build_prompt(personas, feature_inputs, conversation_history=None):
-    persona_desc = "\n".join([f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})" for p in personas])
-    feature_desc = "\n".join([f"{k}: {v}" for k, v in feature_inputs.items()])
+    persona_descriptions = "\n".join([
+        f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})"
+        for p in personas
+    ])
+    
+    feature_description = ""
+    for key, value in feature_inputs.items():
+        if isinstance(value, list):
+            value_text = ", ".join(value) if value else "None"
+        else:
+            value_text = value.strip() if value else "None"
+        feature_description += f"{key}:\n{value_text}\n\n"
+
     prompt = f"""
 Personas:
-{persona_desc}
+{persona_descriptions}
 
 Feature Inputs:
-{feature_desc}
+{feature_description}
 
 Simulate a realistic conversation between these personas about this feature.
-Each persona should:
-- Speak in turn
-- Give a Response, Reasoning, Confidence (High/Medium/Low), and Suggested follow-up
+- Each persona should speak in turn.
+- Use the following template for each persona's response:
+
+[Persona Name]:
+- Response: <what they say>
+- Reasoning: <why they think that>
+- Confidence: <High / Medium / Low>
+- Suggested follow-up: <next question they might ask>
 """
     if conversation_history:
         prompt += "\nPrevious conversation:\n" + conversation_history
     return prompt.strip()
 
-def generate_response(feature_inputs, personas, conversation_history=None):
+# -------------------------
+# Generate GPT Response
+# -------------------------
+def generate_response(feature_inputs, personas, conversation_history=None, model="gpt-4o-mini"):
     prompt = build_prompt(personas, feature_inputs, conversation_history)
     response = openai.chat.completions.create(
-        model="gpt-4o-mini",
+        model=model,
         messages=[
             {"role": "system", "content": "You are an AI facilitator for a virtual focus group."},
             {"role": "user", "content": prompt}
         ],
         max_completion_tokens=700
     )
-    return response.choices[0].message.content.strip()
+    conversation_update = response.choices[0].message.content
+    return conversation_update.strip() + "\n"
 
+# -------------------------
+# Feedback Report
+# -------------------------
 def generate_feedback_report(conversation):
-    insights = re.findall(r'(?i)(?:great|improve|helpful|benefit|like)', conversation)
-    concerns = re.findall(r'(?i)(?:concern|problem|issue|difficult|worry)', conversation)
-    acceptance_rate = round((len(insights) / (len(insights) + len(concerns) + 1)) * 100, 1)
-    usage_likelihood = min(100, acceptance_rate + 10)
+    prompt = f"""
+Analyze the following conversation and create a structured feedback report:
 
-    st.markdown(f"### 🧭 Feedback Report")
-    st.markdown(f"**Acceptance Rate:** {acceptance_rate}%  \n**Usage Likelihood:** {usage_likelihood}%")
-    st.markdown(f"**Insights:** {len(insights)} ({', '.join(insights[:5])})")
-    st.markdown(f"**Concerns:** {len(concerns)} ({', '.join(concerns[:5])})")
+Conversation:
+{conversation}
 
-    st.subheader("📊 Sentiment Breakdown")
-    fig, ax = plt.subplots()
-    ax.bar(['Positive','Concerns'], [len(insights), len(concerns)], color=['#d4edda','#f8d7da'])
-    st.pyplot(fig)
+Report should include:
+- Patterns and themes
+- Consensus and disagreements between personas
+- Actionable recommendations for feature improvements
+- Quantitative metrics (e.g., acceptance, usage likelihood)
+- Qualitative insights (specific concerns, suggested improvements)
+- Simple visualizations if possible
+"""
+    response = openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an AI product analyst."},
+            {"role": "user", "content": prompt}
+        ],
+        max_completion_tokens=1200
+    )
+    return response.choices[0].message.content
 
 # -------------------------
 # Streamlit UI
 # -------------------------
-st.title("💬 AI-Powered Persona Feedback Simulator")
+st.title("Persona Feedback Simulator")
 
 # Tabs for feature input
 tabs = st.tabs(["Text Description","File Upload"])
