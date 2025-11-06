@@ -1,43 +1,42 @@
+import streamlit as st
 import openai
 import json
-import streamlit as st
 import re
-import os
+import matplotlib.pyplot as plt
 
-# Set up OpenAI API key securely via Streamlit secrets
+# -------------------------
+# API Setup
+# -------------------------
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # -------------------------
 # Load Personas
 # -------------------------
-# Assume "personas.json" is in the same directory as the app.py file
-try:
-    with open("personas.json", "r", encoding="utf-8") as f:
-        persona_data = json.load(f)
-except FileNotFoundError:
-    st.error("personas.json not found. Please ensure the file is in the same directory.")
-    persona_data = []
+with open("personas.json", "r", encoding="utf-8") as f:
+    persona_data = json.load(f)
+
+if "personas" not in st.session_state:
+    st.session_state.personas = persona_data
 
 def get_persona_by_id(pid):
     for p in persona_data:
         if p["id"] == pid:
             return p
     return None
-
 # -------------------------
-# Define Colors for Personas
+# Persona Colors
 # -------------------------
 PERSONA_COLORS = {
-    "Sophia Martinez": "#E6194B",  # Red
-    "Jamal Robinson": "#3CB44B",   # Green
-    "Eleanor Chen": "#FFE119",     # Yellow
-    "Diego Alvarez": "#4363D8",    # Blue
-    "Anita Patel": "#F58231",      # Orange
-    "Robert Klein": "#911EB4",     # Purple
-    "Nia Thompson": "#46F0F0",     # Cyan
-    "Marcus Green": "#F032E6",     # Magenta
-    "Aisha Mbatha": "#BCF60C",     # Lime
-    "Owen Gallagher": "#FABEBE",   # Pink
+    "Sophia Martinez": "#E6194B",
+    "Jamal Robinson": "#3CB44B",
+    "Eleanor Chen": "#FFE119",
+    "Diego Alvarez": "#4363D8",
+    "Anita Patel": "#F58231",
+    "Robert Klein": "#911EB4",
+    "Nia Thompson": "#46F0F0",
+    "Marcus Green": "#F032E6",
+    "Aisha Mbatha": "#BCF60C",
+    "Owen Gallagher": "#FABEBE",
 }
 
 def apply_color_to_text(text, persona_name):
@@ -144,121 +143,95 @@ Report should include:
     return response.choices[0].message.content
 
 # -------------------------
-# Streamlit App Layout
+# Streamlit UI
 # -------------------------
+st.title("Persona Feedback Simulator")
 
-st.set_page_config(page_title="AI Persona Focus Group Simulator", layout="wide")
-st.title("AI Persona Focus Group Simulator")
+# Tabs for feature input
+tabs = st.tabs(["Text Description","File Upload"])
+with tabs[0]:
+    text_desc = st.text_area("Enter a textual description")
+with tabs[1]:
+    uploaded_files = st.file_uploader("Upload wireframes/mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
 
-# Initialize conversation history in session state
-if 'conversation_history' not in st.session_state:
-    st.session_state.conversation_history = ""
-if 'report_text' not in st.session_state:
-    st.session_state.report_text = ""
+feature_inputs = {
+    "Text Description": text_desc,
+    "Files": [f.name for f in uploaded_files] if uploaded_files else []
+}
 
-col1, col2 = st.columns([1, 2])
+# Persona selection
+persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
+selected_personas_str = st.multiselect("Select Personas", persona_options)
+selected_personas = [p for p in st.session_state.personas if f"{p['name']} ({p['occupation']})" in selected_personas_str]
 
+# User question
+user_question = st.text_input("Enter your question for the personas")
+
+# Buttons
+col1, col2 = st.columns(2)
 with col1:
-    st.header("Feature Inputs & Personas")
-    
-    # Feature Inputs (using tabs for organization)
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['Text Desc', 'Wireframes', 'Visuals', 'Specs', 'Flows', 'Context'])
-
-    with tab1:
-        text_desc = st.text_area("Textual description of the feature", height=100)
-    with tab2:
-        wireframes = st.file_uploader("Upload wireframes/mockups", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'pdf'])
-    with tab3:
-        visual_elements = st.file_uploader("Upload visuals or mockups", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'pdf'])
-    with tab4:
-        functional_spec = st.text_area("Functional specifications", height=100)
-    with tab5:
-        interaction_flow = st.text_area("Interaction flows", height=100)
-    with tab6:
-        contextual_info = st.text_area("Contextual information", height=100)
-
-    # Persona Selection
-    st.subheader("Select Personas")
-    persona_options = [p['name'] + f" ({p['occupation']})" for p in persona_data]
-    selected_personas_names = st.multiselect("Choose personas for the focus group:", options=persona_options, default=persona_options)
-    
-    # Map selected names back to persona data
-    selected_personas = [p for p in persona_data if p['name'] + f" ({p['occupation']})" in selected_personas_names]
-
-    # User Question Input
-    st.subheader("User Question")
-    user_question = st.text_input("Enter your question for the personas:")
-    
-    # Buttons
-    col1_a, col1_b, col1_c = st.columns(3)
-    with col1_a:
-        submit_button = st.button("Ask Personas", type="primary")
-    with col1_b:
-        clear_button = st.button("Clear Conversation", type="secondary")
-    with col1_c:
-        report_button = st.button("Generate Report", type="secondary")
+    if st.button("Ask Personas"):
+        if not selected_personas:
+            st.warning("Select at least one persona!")
+        elif not user_question:
+            st.warning("Enter a question!")
+        else:
+            if "conversation_history" not in st.session_state:
+                st.session_state.conversation_history = ""
+            st.session_state.conversation_history += f"\nUser: {user_question}\n\n"
+            response = generate_response(feature_inputs, selected_personas, st.session_state.conversation_history)
+            st.session_state.conversation_history += response + "\n"
 
 with col2:
-    st.header("Conversation History")
-    # Display area for conversation
-    conversation_container = st.container(border=True, height=600)
-    
-    # Display report area
-    st.header("Feedback Report")
-    report_container = st.container(border=True, height=600)
+    if st.button("Generate Feedback Report"):
+        if "conversation_history" in st.session_state and st.session_state.conversation_history:
+            generate_feedback_report(st.session_state.conversation_history)
+        else:
+            st.warning("No conversation yet to generate report.")
 
+st.markdown("---")
+st.markdown("### 💬 Conversation History")
+if "conversation_history" in st.session_state and st.session_state.conversation_history:
+    for line in st.session_state.conversation_history.split("\n"):
+        for p in selected_personas:
+            if line.startswith(p["name"]):
+                st.markdown(format_response_line(line, p["name"]), unsafe_allow_html=True)
+                break
+        else:
+            if line.startswith("User:"):
+                st.markdown(f"**{line}**")
+            elif line.strip():
+                st.markdown(line)
 
-# -------------------------
-# Button Handlers & Logic (Streamlit style)
-# -------------------------
-
-if clear_button:
+if st.button("Clear Conversation"):
     st.session_state.conversation_history = ""
-    st.session_state.report_text = ""
     st.experimental_rerun()
 
-if submit_button and user_question:
-    if not selected_personas:
-        st.warning("Please select at least one persona.")
-    else:
-        feature_inputs = {
-            "Text Description": text_desc,
-            "Wireframes": [f.name for f in wireframes],
-            "Visual Elements": [f.name for f in visual_elements],
-            "Functional Specs": functional_spec,
-            "Interaction Flows": interaction_flow,
-            "Contextual Info": contextual_info
+# -------------------------
+# Create a new persona
+# -------------------------
+st.sidebar.header("Create New Persona")
+new_name = st.sidebar.text_input("Name")
+new_occupation = st.sidebar.text_input("Occupation")
+new_location = st.sidebar.text_input("Location")
+new_tech = st.sidebar.selectbox("Tech Proficiency", ["Low","Medium","High"])
+new_traits = st.sidebar.text_area("Behavioral Traits (comma separated)")
+
+if st.sidebar.button("Add Persona"):
+    if new_name.strip():
+        new_persona = {
+            "id": f"p{len(st.session_state.personas)+1}",
+            "name": new_name.strip(),
+            "occupation": new_occupation.strip(),
+            "location": new_location.strip(),
+            "tech_proficiency": new_tech,
+            "behavioral_traits": [t.strip() for t in new_traits.split(",") if t.strip()]
         }
-
-        st.session_state.conversation_history += f"\n\n**User:** {user_question}\n"
-        
-        with st.spinner("Generating persona responses..."):
-            persona_reply = generate_response(feature_inputs, selected_personas, st.session_state.conversation_history)
-            st.session_state.conversation_history += persona_reply
-
-        # After generating response, clear report area
-        st.session_state.report_text = ""
-        st.experimental_rerun() # Rerun to update the history display
-
-if report_button and st.session_state.conversation_history:
-    with st.spinner("Generating feedback report..."):
-        st.session_state.report_text = generate_feedback_report(st.session_state.conversation_history)
-    st.experimental_rerun() # Rerun to update the report display
-
-
-# -------------------------
-# Displaying Content
-# -------------------------
-
-# Display the conversation history with formatting
-with conversation_container:
-    # Use markdown with unsafe_allow_html for styling
-    st.markdown(st.session_state.conversation_history, unsafe_allow_html=True)
-
-    # Optional: Implement the detailed line-by-line formatting if needed
-    # (The current simple markdown works well too)
-
-# Display the feedback report
-with report_container:
-    if st.session_state.report_text:
-        st.markdown(st.session_state.report_text)
+        st.session_state.personas.append(new_persona)
+        # save back to JSON
+        with open("personas.json", "w", encoding="utf-8") as f:
+            json.dump(st.session_state.personas, f, indent=2)
+        st.success(f"Persona '{new_name}' added successfully!")
+        st.experimental_rerun()
+    else:
+        st.error("Name is required.")
