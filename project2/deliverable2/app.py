@@ -10,28 +10,31 @@ import matplotlib.pyplot as plt
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # -------------------------
-# Load or initialize personas
+# Load Personas
 # -------------------------
-if "personas" not in st.session_state:
+def load_personas():
     try:
         with open("personas.json", "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, list):
-                data = []
-            st.session_state.personas = data
+                return []
+            return data
     except FileNotFoundError:
-        st.session_state.personas = []
+        return []
     except json.JSONDecodeError:
-        st.session_state.personas = []
+        return []
+
+if "personas" not in st.session_state:
+    st.session_state.personas = load_personas()
+
+def get_persona_by_id(pid):
+    for p in st.session_state.personas:
+        if p["id"] == pid:
+            return p
+    return None
 
 # -------------------------
-# Initialize conversation
-# -------------------------
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = ""
-
-# -------------------------
-# Persona colors
+# Persona Colors
 # -------------------------
 PERSONA_COLORS = {
     "Sophia Martinez": "#E6194B",
@@ -46,44 +49,33 @@ PERSONA_COLORS = {
     "Owen Gallagher": "#FABEBE",
 }
 
-# -------------------------
-# Helper functions
-# -------------------------
-def detect_insight_or_concern(text):
-    lower_text = text.lower()
-    if re.search(r'\b(think|like|improve|great|benefit|love|helpful)\b', lower_text):
-        return "insight"
-    if re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard)\b', lower_text):
-        return "concern"
-    return None
-
 def format_response_line(text, persona_name):
     color = PERSONA_COLORS.get(persona_name, "#000000")
-    highlight = detect_insight_or_concern(text)
+    lower_text = text.lower()
     background = ""
-    if highlight == "insight":
+    if re.search(r'\b(think|like|improve|great|benefit|love|helpful)\b', lower_text):
         background = "background-color: #d4edda;"
-    elif highlight == "concern":
+    elif re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard)\b', lower_text):
         background = "background-color: #f8d7da;"
     return f'<div style="color:{color};{background}padding:4px;margin:2px 0;border-left:4px solid {color};white-space:pre-wrap;">{text}</div>'
 
+# -------------------------
+# GPT Functions
+# -------------------------
 def build_prompt(personas, feature_inputs, conversation_history=None):
-    persona_descriptions = "\n".join([
-        f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})"
-        for p in personas
-    ])
-    feature_description = "\n".join([f"{k}: {v}" for k, v in feature_inputs.items()])
+    persona_desc = "\n".join([f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})" for p in personas])
+    feature_desc = "\n".join([f"{k}: {v}" for k, v in feature_inputs.items()])
     prompt = f"""
 Personas:
-{persona_descriptions}
+{persona_desc}
 
-Feature:
-{feature_description}
+Feature Inputs:
+{feature_desc}
 
 Simulate a realistic conversation between these personas about this feature.
 Each persona should:
 - Speak in turn
-- Give a Response, Reasoning, Confidence (High/Medium/Low), and a Suggested follow-up
+- Give a Response, Reasoning, Confidence (High/Medium/Low), and Suggested follow-up
 """
     if conversation_history:
         prompt += "\nPrevious conversation:\n" + conversation_history
@@ -104,21 +96,17 @@ def generate_response(feature_inputs, personas, conversation_history=None):
 def generate_feedback_report(conversation):
     insights = re.findall(r'(?i)(?:great|improve|helpful|benefit|like)', conversation)
     concerns = re.findall(r'(?i)(?:concern|problem|issue|difficult|worry)', conversation)
-
     acceptance_rate = round((len(insights) / (len(insights) + len(concerns) + 1)) * 100, 1)
     usage_likelihood = min(100, acceptance_rate + 10)
 
     st.markdown(f"### 🧭 Feedback Report")
-    st.markdown(f"**Key Metrics**\n- Acceptance Rate: {acceptance_rate}%\n- Usage Likelihood: {usage_likelihood}%")
-    st.markdown(f"**Insights** ({len(insights)}): {', '.join(insights[:5])}")
-    st.markdown(f"**Concerns** ({len(concerns)}): {', '.join(concerns[:5])}")
-    st.markdown("**Recommendations:**\n- Address usability concerns.\n- Reinforce appreciated benefits.\n- Prioritize changes balancing value & ease of use.")
+    st.markdown(f"**Acceptance Rate:** {acceptance_rate}%  \n**Usage Likelihood:** {usage_likelihood}%")
+    st.markdown(f"**Insights:** {len(insights)} ({', '.join(insights[:5])})")
+    st.markdown(f"**Concerns:** {len(concerns)} ({', '.join(concerns[:5])})")
 
     st.subheader("📊 Sentiment Breakdown")
-    labels = ['Positive', 'Concerns']
-    values = [len(insights), len(concerns)]
     fig, ax = plt.subplots()
-    ax.bar(labels, values, color=['#d4edda', '#f8d7da'])
+    ax.bar(['Positive','Concerns'], [len(insights), len(concerns)], color=['#d4edda','#f8d7da'])
     st.pyplot(fig)
 
 # -------------------------
@@ -127,25 +115,19 @@ def generate_feedback_report(conversation):
 st.title("💬 AI-Powered Persona Feedback Simulator")
 
 # Tabs for feature input
-tabs = st.tabs(["Text Description", "Wireframes", "Visual Elements", "Functional Specs", "Interaction Flows", "Contextual Info"])
-
+tabs = st.tabs(["Text Description","Wireframes","Visual Elements","Functional Specs","Interaction Flows","Contextual Info"])
 with tabs[0]:
-    text_desc = st.text_area("Enter a textual description of the feature")
-
+    text_desc = st.text_area("Enter a textual description")
 with tabs[1]:
     wireframes = st.file_uploader("Upload wireframes/mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
-
 with tabs[2]:
     visuals = st.file_uploader("Upload visual elements", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
-
 with tabs[3]:
     functional_spec = st.text_area("Enter functional specifications")
-
 with tabs[4]:
     interaction_flow = st.text_area("Describe interaction flows")
-
 with tabs[5]:
-    contextual_info = st.text_area("Provide any contextual information")
+    contextual_info = st.text_area("Provide contextual information")
 
 feature_inputs = {
     "Text Description": text_desc,
@@ -157,20 +139,14 @@ feature_inputs = {
 }
 
 # Persona selection
-selected_personas_str = st.multiselect(
-    "Select Personas",
-    options=[f"{p['name']} ({p['occupation']})" for p in st.session_state.personas],
-    key="persona_selector"
-)
-
-selected_personas = [
-    p for p in st.session_state.personas
-    if f"{p['name']} ({p['occupation']})" in selected_personas_str
-]
+persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
+selected_personas_str = st.multiselect("Select Personas", persona_options)
+selected_personas = [p for p in st.session_state.personas if f"{p['name']} ({p['occupation']})" in selected_personas_str]
 
 # User question
 user_question = st.text_input("Enter your question for the personas")
 
+# Buttons
 col1, col2 = st.columns(2)
 with col1:
     if st.button("Ask Personas"):
@@ -179,17 +155,22 @@ with col1:
         elif not user_question:
             st.warning("Enter a question!")
         else:
+            if "conversation_history" not in st.session_state:
+                st.session_state.conversation_history = ""
             st.session_state.conversation_history += f"\nUser: {user_question}\n\n"
             response = generate_response(feature_inputs, selected_personas, st.session_state.conversation_history)
             st.session_state.conversation_history += response + "\n"
 
 with col2:
-    if st.button("Generate Report"):
-        generate_feedback_report(st.session_state.conversation_history)
+    if st.button("Generate Feedback Report"):
+        if "conversation_history" in st.session_state and st.session_state.conversation_history:
+            generate_feedback_report(st.session_state.conversation_history)
+        else:
+            st.warning("No conversation yet to generate report.")
 
 st.markdown("---")
 st.markdown("### 💬 Conversation History")
-if st.session_state.conversation_history:
+if "conversation_history" in st.session_state and st.session_state.conversation_history:
     for line in st.session_state.conversation_history.split("\n"):
         for p in selected_personas:
             if line.startswith(p["name"]):
@@ -212,7 +193,7 @@ st.sidebar.header("Create New Persona")
 new_name = st.sidebar.text_input("Name")
 new_occupation = st.sidebar.text_input("Occupation")
 new_location = st.sidebar.text_input("Location")
-new_tech = st.sidebar.selectbox("Tech Proficiency", ["Low", "Medium", "High"])
+new_tech = st.sidebar.selectbox("Tech Proficiency", ["Low","Medium","High"])
 new_traits = st.sidebar.text_area("Behavioral Traits (comma separated)")
 
 if st.sidebar.button("Add Persona"):
@@ -226,8 +207,10 @@ if st.sidebar.button("Add Persona"):
             "behavioral_traits": [t.strip() for t in new_traits.split(",") if t.strip()]
         }
         st.session_state.personas.append(new_persona)
-        # Update multiselect dynamically
-        st.session_state.persona_selector = []
-        st.success(f"Persona '{new_name}' added!")
+        # save back to JSON
+        with open("personas.json", "w", encoding="utf-8") as f:
+            json.dump(st.session_state.personas, f, indent=2)
+        st.success(f"Persona '{new_name}' added successfully!")
+        st.experimental_rerun()
     else:
         st.error("Name is required.")
