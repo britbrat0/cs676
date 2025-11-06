@@ -24,8 +24,13 @@ def load_personas():
     except json.JSONDecodeError:
         return []
 
+# Initialize personas in session_state
 if "personas" not in st.session_state:
-    st.session_state.personas = load_personas()
+    try:
+        with open("personas.json", "r", encoding="utf-8") as f:
+            st.session_state.personas = json.load(f)
+    except:
+        st.session_state.personas = []
 
 def get_persona_by_id(pid):
     for p in st.session_state.personas:
