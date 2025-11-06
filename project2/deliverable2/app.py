@@ -1,60 +1,104 @@
 import streamlit as st
-import json
 import openai
+import json
 import re
-from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+from io import BytesIO
+
+# -------------------------
+# API Setup
+# -------------------------
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # -------------------------
 # Load Personas
 # -------------------------
-persona_path = Path("personas.json")
-if not persona_path.exists():
-    persona_path.write_text("[]", encoding="utf-8")
+def load_personas():
+    try:
+        with open("personas.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not data:
+                st.warning("⚠️ personas.json is empty.")
+            return data
+    except FileNotFoundError:
+        st.error("❌ personas.json not found. Please upload it to your repo.")
+        return []
+    except json.JSONDecodeError:
+        st.error("⚠️ personas.json is not valid JSON.")
+        return []
 
-with open(persona_path, "r", encoding="utf-8") as f:
-    persona_data = json.load(f)
+persona_data = load_personas()
 
-# -------------------------
-# Helper Functions
-# -------------------------
 def get_persona_by_id(pid):
     for p in persona_data:
         if p["id"] == pid:
             return p
     return None
 
-def highlight_insights(text):
-    text = re.sub(r"(?i)(concern[s]?)", r"🟥 **\1**", text)
-    text = re.sub(r"(?i)(insight[s]?)", r"🟩 **\1**", text)
-    return text
+# -------------------------
+# Color and Formatting Helpers
+# -------------------------
+PERSONA_COLORS = {
+    "Sophia Martinez": "#E6194B",
+    "Jamal Robinson": "#3CB44B",
+    "Eleanor Chen": "#FFE119",
+    "Diego Alvarez": "#4363D8",
+    "Anita Patel": "#F58231",
+    "Robert Klein": "#911EB4",
+    "Nia Thompson": "#46F0F0",
+    "Marcus Green": "#F032E6",
+    "Aisha Mbatha": "#BCF60C",
+    "Owen Gallagher": "#FABEBE",
+}
 
-def build_prompt(personas, feature_description, conversation_history=None):
+def format_response_line(text, persona_name):
+    color = PERSONA_COLORS.get(persona_name, "#000000")
+    highlight = detect_insight_or_concern(text)
+    background = ""
+    if highlight == "insight":
+        background = "background-color: #d4edda;"  # green
+    elif highlight == "concern":
+        background = "background-color: #f8d7da;"  # red
+    return f'<div style="color:{color};{background}padding:4px;margin:2px 0;border-left:4px solid {color};white-space:pre-wrap;">{text}</div>'
+
+def detect_insight_or_concern(text):
+    lower_text = text.lower()
+    if re.search(r'\b(think|like|improve|great|benefit|love|helpful)\b', lower_text):
+        return "insight"
+    if re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard)\b', lower_text):
+        return "concern"
+    return None
+
+# -------------------------
+# GPT Simulation
+# -------------------------
+def build_prompt(personas, feature_inputs, conversation_history=None):
     persona_descriptions = "\n".join([
         f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})"
         for p in personas
     ])
+    feature_description = "\n".join([f"{k}: {v}" for k, v in feature_inputs.items()])
     prompt = f"""
 Personas:
 {persona_descriptions}
 
-Feature Description:
+Feature:
 {feature_description}
 
 Simulate a realistic conversation between these personas about this feature.
 Each persona should:
-- Respond with realistic tone and depth.
-- Include reasoning, confidence, and suggested follow-up.
-- Highlight insights and concerns if relevant.
-
+- Speak in turn
+- Give a Response, Reasoning, Confidence (High/Medium/Low), and a Suggested follow-up
 """
     if conversation_history:
         prompt += "\nPrevious conversation:\n" + conversation_history
     return prompt.strip()
 
-def generate_response(feature_description, personas, conversation_history=None, model="gpt-4o-mini"):
-    prompt = build_prompt(personas, feature_description, conversation_history)
+def generate_response(feature_inputs, personas, conversation_history=None):
+    prompt = build_prompt(personas, feature_inputs, conversation_history)
     response = openai.chat.completions.create(
-        model=model,
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an AI facilitator for a virtual focus group."},
             {"role": "user", "content": prompt}
@@ -64,100 +108,130 @@ def generate_response(feature_description, personas, conversation_history=None, 
     return response.choices[0].message.content.strip()
 
 # -------------------------
-# Streamlit App Layout
+# Feedback Report
 # -------------------------
-st.set_page_config(page_title="AI Focus Group Simulator", layout="wide")
+def generate_feedback_report(conversation_history):
+    """Analyze simulated feedback and generate insights, metrics, and visuals."""
+    insights = re.findall(r'(?i)(?:great|improve|helpful|benefit|like)', conversation_history)
+    concerns = re.findall(r'(?i)(?:concern|problem|issue|difficult|worry)', conversation_history)
 
-st.title("🧠 AI Focus Group Simulator")
+    acceptance_rate = round((len(insights) / (len(insights) + len(concerns) + 1)) * 100, 1)
+    usage_likelihood = min(100, acceptance_rate + 10)
 
-# --- API Key Input
-openai.api_key = st.text_input("Enter your OpenAI API Key:", type="password")
+    report_text = f"""
+### 🧭 Feedback Report
 
-# --- Tabs for feature input
-tabs = st.tabs(["Feature Description", "Wireframe / Mockup", "Functional Specs", "Interaction Flow", "Visual Elements", "Context Info"])
+**Key Metrics**
+- Acceptance Rate: {acceptance_rate}%
+- Usage Likelihood: {usage_likelihood}%
 
-feature_inputs = {}
+**Insights**
+{len(insights)} positive themes identified (e.g., {', '.join(insights[:5])}).
+
+**Concerns**
+{len(concerns)} areas of hesitation or challenge (e.g., {', '.join(concerns[:5])}).
+
+**Recommendations**
+- Address top usability issues mentioned in concerns.
+- Reinforce key benefits appreciated by multiple personas.
+- Prioritize changes that balance ease of use with perceived value.
+"""
+
+    st.markdown(report_text)
+
+    # Visualization
+    st.subheader("📊 Sentiment Breakdown")
+    labels = ['Positive', 'Concerns']
+    values = [len(insights), len(concerns)]
+    fig, ax = plt.subplots()
+    ax.bar(labels, values)
+    st.pyplot(fig)
+
+# -------------------------
+# Streamlit UI
+# -------------------------
+st.title("💬 AI-Powered Persona Feedback Simulator")
+
+# Tabs for feature inputs
+tabs = st.tabs([
+    "Text Description", "Wireframes", "Visual Elements",
+    "Functional Specs", "Interaction Flows", "Contextual Info"
+])
+
 with tabs[0]:
-    feature_inputs["description"] = st.text_area("Describe your feature:", height=150)
+    text_desc = st.text_area("Enter a textual description of the feature")
+
 with tabs[1]:
-    feature_inputs["wireframe"] = st.text_area("Paste or describe wireframe/mockup:")
+    wireframes = st.file_uploader("Upload wireframes or mockups", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
+
 with tabs[2]:
-    feature_inputs["specs"] = st.text_area("Enter functional specs:")
+    visuals = st.file_uploader("Upload visuals or design elements", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
+
 with tabs[3]:
-    feature_inputs["interaction"] = st.text_area("Describe user interaction flow:")
+    functional_spec = st.text_area("Enter functional specifications")
+
 with tabs[4]:
-    feature_inputs["visuals"] = st.text_area("Describe visual elements:")
+    interaction_flow = st.text_area("Describe interaction flows")
+
 with tabs[5]:
-    feature_inputs["context"] = st.text_area("Add contextual information:")
+    contextual_info = st.text_area("Provide any contextual information")
 
-feature_description = "\n".join([f"{k}: {v}" for k, v in feature_inputs.items() if v])
+# Collect inputs
+feature_inputs = {
+    "Text Description": text_desc,
+    "Wireframes": [f.name for f in wireframes] if wireframes else [],
+    "Visual Elements": [f.name for f in visuals] if visuals else [],
+    "Functional Specs": functional_spec,
+    "Interaction Flows": interaction_flow,
+    "Contextual Info": contextual_info
+}
 
-# --- Persona selection
-st.header("Select Personas")
-persona_options = {f"{p['name']} ({p['occupation']})": p["id"] for p in persona_data}
-selected_labels = st.multiselect("Choose personas to include:", list(persona_options.keys()))
-selected_personas = [get_persona_by_id(persona_options[label]) for label in selected_labels] if selected_labels else persona_data
+# Persona selection
+if persona_data:
+    persona_options = [f"{p['name']} ({p['occupation']})" for p in persona_data]
+    selected_personas = st.multiselect("Select Personas", persona_options)
+    personas = [p for p in persona_data if f"{p['name']} ({p['occupation']})" in selected_personas]
+else:
+    personas = []
 
-# --- Conversation history
+# Conversation controls
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = ""
 
-st.header("Ask the Personas")
-user_question = st.text_input("Enter your question:")
-if st.button("Ask Personas"):
-    if not openai.api_key:
-        st.warning("Please enter your OpenAI API key first.")
-    elif not user_question:
-        st.warning("Please enter a question.")
-    else:
-        st.session_state.conversation_history += f"\n**User:** {user_question}\n\n"
-        reply = generate_response(feature_description, selected_personas, st.session_state.conversation_history)
-        st.session_state.conversation_history += reply + "\n"
-        st.success("Personas have responded!")
+user_question = st.text_input("Enter your question for the personas")
 
-# --- Display conversation
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Ask Personas"):
+        if not personas:
+            st.warning("Please select at least one persona.")
+        elif not user_question:
+            st.warning("Please enter a question.")
+        else:
+            st.session_state.conversation_history += f"\nUser: {user_question}\n\n"
+            response = generate_response(feature_inputs, personas, st.session_state.conversation_history)
+            st.session_state.conversation_history += response + "\n"
+
+with col2:
+    if st.button("Generate Report"):
+        generate_feedback_report(st.session_state.conversation_history)
+
+st.markdown("---")
+st.markdown("### 💬 Conversation History")
+
+# Display conversation
 if st.session_state.conversation_history:
-    st.markdown("### 💬 Conversation")
-    st.markdown(highlight_insights(st.session_state.conversation_history))
+    for line in st.session_state.conversation_history.split("\n"):
+        for p in personas:
+            if line.startswith(p["name"]):
+                st.markdown(format_response_line(line, p["name"]), unsafe_allow_html=True)
+                break
+        else:
+            if line.startswith("User:"):
+                st.markdown(f"**{line}**")
+            elif line.strip():
+                st.markdown(line)
 
-# --- Generate Report
-if st.button("📊 Generate Feedback Report"):
-    st.subheader("AI Feedback Report")
-    analysis_prompt = f"""
-Analyze this simulated conversation:
-{st.session_state.conversation_history}
-
-Generate a report identifying:
-- Key patterns and themes in feedback
-- Consensus and disagreements between personas
-- Actionable recommendations for feature improvements
-- Quantitative metrics (acceptance rate, usage likelihood)
-- Qualitative insights (specific concerns, suggestions)
-"""
-    report = generate_response(analysis_prompt, selected_personas)
-    st.markdown(report)
-
-# --- Create a new persona
-st.header("Add a New Persona")
-new_name = st.text_input("Name:")
-new_occ = st.text_input("Occupation:")
-new_loc = st.text_input("Location:")
-new_tech = st.selectbox("Tech Proficiency:", ["Low", "Medium", "High"])
-new_traits = st.text_area("Behavioral Traits (comma-separated):")
-
-if st.button("Add Persona"):
-    if new_name and new_occ:
-        new_persona = {
-            "id": len(persona_data) + 1,
-            "name": new_name,
-            "occupation": new_occ,
-            "location": new_loc,
-            "tech_proficiency": new_tech,
-            "behavioral_traits": [t.strip() for t in new_traits.split(",") if t.strip()]
-        }
-        persona_data.append(new_persona)
-        with open("personas.json", "w", encoding="utf-8") as f:
-            json.dump(persona_data, f, indent=4)
-        st.success(f"✅ Added new persona: {new_name}")
-    else:
-        st.warning("Please fill in at least name and occupation.")
+if st.button("Clear Conversation"):
+    st.session_state.conversation_history = ""
+    st.experimental_rerun()
