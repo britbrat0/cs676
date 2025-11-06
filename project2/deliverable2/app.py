@@ -115,27 +115,15 @@ def generate_feedback_report(conversation):
 st.title("💬 AI-Powered Persona Feedback Simulator")
 
 # Tabs for feature input
-tabs = st.tabs(["Text Description","Wireframes","Visual Elements","Functional Specs","Interaction Flows","Contextual Info"])
+tabs = st.tabs(["Text Description","File Upload"])
 with tabs[0]:
     text_desc = st.text_area("Enter a textual description")
 with tabs[1]:
-    wireframes = st.file_uploader("Upload wireframes/mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
-with tabs[2]:
-    visuals = st.file_uploader("Upload visual elements", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
-with tabs[3]:
-    functional_spec = st.text_area("Enter functional specifications")
-with tabs[4]:
-    interaction_flow = st.text_area("Describe interaction flows")
-with tabs[5]:
-    contextual_info = st.text_area("Provide contextual information")
+    uploaded_files = st.file_uploader("Upload wireframes/mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
 
 feature_inputs = {
     "Text Description": text_desc,
-    "Wireframes": [f.name for f in wireframes] if wireframes else [],
-    "Visual Elements": [f.name for f in visuals] if visuals else [],
-    "Functional Specs": functional_spec,
-    "Interaction Flows": interaction_flow,
-    "Contextual Info": contextual_info
+    "Files": [f.name for f in uploaded_files] if uploaded_files else []
 }
 
 # Persona selection
