@@ -224,4 +224,41 @@ if st.session_state.conversation_history.strip():
 # -------------------------
 if report_btn:
     if not st.session_state.conversation_history.strip():
-        st.warning("No conversat
+        st.warning("No conversation yet to analyze.")
+    else:
+        st.markdown("### 📊 Feedback Report")
+        report = generate_feedback_report(st.session_state.conversation_history)
+        st.markdown(f"<pre style='white-space:pre-wrap'>{report}</pre>", unsafe_allow_html=True)
+
+
+# -------------------------
+# Create New Persona
+# -------------------------
+st.markdown("---")
+st.header("➕ Create a New Persona")
+
+with st.form("new_persona_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Full Name")
+        occupation = st.text_input("Occupation")
+        location = st.text_input("Location")
+    with col2:
+        tech = st.selectbox("Tech Proficiency", ["Low", "Medium", "High"])
+        traits = st.text_input("Behavioral Traits (comma-separated)")
+    submit_new = st.form_submit_button("Add Persona")
+
+    if submit_new:
+        new_id = max([p["id"] for p in persona_data]) + 1 if persona_data else 1
+        new_traits = [t.strip() for t in traits.split(",") if t.strip()]
+        new_persona = {
+            "id": new_id,
+            "name": name.strip(),
+            "occupation": occupation.strip(),
+            "location": location.strip(),
+            "tech_proficiency": tech,
+            "behavioral_traits": new_traits,
+        }
+        persona_data.append(new_persona)
+        save_personas(persona_data)
+        st.success(f"Persona '{name}' added successfully! Refresh to see it in the list.")
