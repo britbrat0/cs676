@@ -110,7 +110,7 @@ for persona in personas:
 ## Feedback Synthesis
 
 After generating individual persona responses, the system produces a
-**summary report** highlighting key insights and concerns.
+summary report highlighting key insights and concerns.
 
 ### Steps:
 
@@ -169,22 +169,15 @@ consistent, behaviorally diverse, and analytically useful.
 Each persona's decision-making combines deterministic and probabilistic
 components:
 
-  **Goal Alignment:**            Checks how closely input aligns with
-                                persona's goals.
+  **Goal Alignment:** Checks how closely input aligns with persona's goals.
 
-  **Contextual Memory Recall:**  Retrieves relevant parts of previous
-                                interactions.
+  **Contextual Memory Recall:** Retrieves relevant parts of previous interactions.
 
-  **Response Scoring:**          Evaluates multiple candidate responses
-                                using an internal reward model (clarity,
-                                tone, novelty).
+  **Response Scoring:** Evaluates multiple candidate responses using an internal reward model (clarity, tone, novelty).
 
-  **Tone Calibration:**          Adjusts phrasing style (formal, critical,
-                                supportive).
+  **Tone Calibration:** Adjusts phrasing style (formal, critical, supportive).
 
-  **Adaptive Weighting:**        Balances between deterministic persona
-                                behavior and stochastic creativity from
-                                GPT generation.
+  **Adaptive Weighting:** Balances between deterministic persona behavior and stochastic creativity from GPT generation.
   -----------------------------------------------------------------------
 
 ------------------------------------------------------------------------
