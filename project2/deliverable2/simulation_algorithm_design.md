@@ -169,23 +169,20 @@ consistent, behaviorally diverse, and analytically useful.
 Each persona's decision-making combines deterministic and probabilistic
 components:
 
-  -----------------------------------------------------------------------
-  Process                       Description
-  ----------------------------- -----------------------------------------
-  **Goal Alignment**            Checks how closely input aligns with
+  **Goal Alignment:**            Checks how closely input aligns with
                                 persona's goals.
 
-  **Contextual Memory Recall**  Retrieves relevant parts of previous
+  **Contextual Memory Recall:**  Retrieves relevant parts of previous
                                 interactions.
 
-  **Response Scoring**          Evaluates multiple candidate responses
+  **Response Scoring:**          Evaluates multiple candidate responses
                                 using an internal reward model (clarity,
                                 tone, novelty).
 
-  **Tone Calibration**          Adjusts phrasing style (formal, critical,
+  **Tone Calibration:**          Adjusts phrasing style (formal, critical,
                                 supportive).
 
-  **Adaptive Weighting**        Balances between deterministic persona
+  **Adaptive Weighting:**        Balances between deterministic persona
                                 behavior and stochastic creativity from
                                 GPT generation.
   -----------------------------------------------------------------------
