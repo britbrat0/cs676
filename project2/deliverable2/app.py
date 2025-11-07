@@ -2,6 +2,9 @@ import streamlit as st
 import openai
 import json
 import re
+import pandas as pd
+import altair as alt
+
 
 # -------------------------
 # Page Config
@@ -373,9 +376,66 @@ if report_button:
             if report:
                 st.markdown("---")
                 st.markdown("## 📊 Feedback Analysis Report")
+
+                # --- Extract Quantitative Data ---
+                acceptance_rate = None
+                usage_by_persona = {}
+                priority_level = None
+
+                # Try to extract numeric estimates from the report
+                acceptance_match = re.search(r"acceptance rate[^0-9]*(\d{1,3})%", report, re.IGNORECASE)
+                if acceptance_match:
+                    acceptance_rate = int(acceptance_match.group(1))
+
+                # Try to find priority level
+                priority_match = re.search(r"priority level[^:]*:\s*(High|Medium|Low)", report, re.IGNORECASE)
+                if priority_match:
+                    priority_level = priority_match.group(1).capitalize()
+
+                # Try to extract persona usage likelihoods if listed (e.g., "Sophia Martinez – 80%")
+                for line in report.splitlines():
+                    m = re.match(r"[-*]?\s*([A-Za-z ]+)\s*[-–]\s*(\d{1,3})%", line.strip())
+                    if m:
+                        usage_by_persona[m.group(1).strip()] = int(m.group(2))
+
+                # --- Display Metrics ---
+                metrics_col1, metrics_col2 = st.columns(2)
+                with metrics_col1:
+                    if acceptance_rate is not None:
+                        st.metric("Overall Acceptance Rate", f"{acceptance_rate}%")
+                        st.progress(acceptance_rate / 100)
+                with metrics_col2:
+                    if priority_level:
+                        priority_color = {
+                            "High": "🔴 High",
+                            "Medium": "🟠 Medium",
+                            "Low": "🟢 Low"
+                        }.get(priority_level, priority_level)
+                        st.metric("Priority Level", priority_color)
+
+                # --- Persona Usage Visualization ---
+                if usage_by_persona:
+                    df_usage = pd.DataFrame({
+                        "Persona": list(usage_by_persona.keys()),
+                        "Likelihood of Use (%)": list(usage_by_persona.values())
+                    })
+
+                    chart = (
+                        alt.Chart(df_usage)
+                        .mark_bar(color="#3CB44B")
+                        .encode(
+                            x=alt.X("Likelihood of Use (%)", scale=alt.Scale(domain=[0, 100])),
+                            y=alt.Y("Persona", sort="-x"),
+                            tooltip=["Persona", "Likelihood of Use (%)"]
+                        )
+                        .properties(title="Persona Likelihood of Feature Usage", height=300)
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+
+                st.markdown("---")
                 st.markdown(report)
-                
-                # Download button for report
+
+                # --- Download button ---
                 st.download_button(
                     label="⬇️ Download Report",
                     data=report,
