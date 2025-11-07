@@ -1,7 +1,7 @@
 # Simulation Algorithm Design
 
-This is a detailed overview of the **simulation
-algorithm** that powers the persona-based feedback system. It explains
+This is a detailed overview of the simulation
+algorithm that powers the persona-based feedback system. It explains
 how personas are modeled, how user feature descriptions are processed,
 how conversations are generated, and how the system synthesizes feedback
 into structured insights. It also outlines the underlying AI
@@ -43,7 +43,7 @@ defined as a structured JSON object with the following schema:
 
 ### Behavioral Logic
 
-Each persona follows a set of **rule-based and probabilistic logic** for
+Each persona follows a set of rule-based and probabilistic logic for
 generating feedback. The simulation ensures diverse, realistic outputs
 by adjusting response tone and focus based on both persona attributes
 and conversation history.
@@ -70,7 +70,7 @@ personas.
 5.  **Persona-Specific Filtering:** Each persona receives a subset of
     features relevant to their domain.
 
-This ensures that feedback remains **context-aware** and **targeted** to
+This ensures that feedback remains context-aware and targeted to
 persona expertise.
 
 ------------------------------------------------------------------------
@@ -132,8 +132,8 @@ all personas' evaluations.
 
 ## Underlying AI Architecture
 
-The simulation architecture combines **symbolic reasoning** (rules,
-goals, and persona metadata) with **neural generation** (GPT-5
+The simulation architecture combines symbolic reasoning (rules,
+goals, and persona metadata) with neural generation (GPT-5
 responses).
 
 ### Core Components
@@ -159,8 +159,8 @@ E --> F[Feedback Synthesis Module]
 F --> G[Visualization + Summary Report]
 ```
 
-This hybrid architecture ensures responses are **contextually
-consistent**, **behaviorally diverse**, and **analytically useful**.
+This hybrid architecture ensures responses are contextually
+consistent, behaviorally diverse, and analytically useful.
 
 ------------------------------------------------------------------------
 
@@ -194,11 +194,11 @@ components:
 
 ## Summary
 
-This simulation framework enables **multi-persona feedback generation**
-by integrating: - **Structured persona modeling** - **Semantic text
-processing** - **LLM-driven dialogue generation** - **Automated feedback
-synthesis and visualization**
+This simulation framework enables multi-persona feedback generation
+by integrating structured persona modeling, semantic text
+processing, LLM-driven dialogue generation, Automated feedback
+synthesis and visualization
 
 Together, these elements create a robust, flexible system for
-**simulated evaluation and insight generation** across creative,
+simulated evaluation and insight generation across creative,
 technical, and analytical domains.
