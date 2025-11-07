@@ -1,4 +1,4 @@
-# Simulation Algorithm Design Overview
+# Simulation Algorithm Design
 
 This is a detailed overview of the **simulation
 algorithm** that powers the persona-based feedback system. It explains
