@@ -421,6 +421,8 @@ if st.session_state.conversation_history.strip():
                     st.markdown(f"  {line}")
                 else:
                     st.markdown(line)
+
+    st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
 
