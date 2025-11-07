@@ -9,7 +9,7 @@ architecture and decision-making processes.
 
 ------------------------------------------------------------------------
 
-## 1. Persona Modeling
+## Persona Modeling
 
 Personas represent simulated users with distinct
 characteristics, demographics, and communication styles. Each persona is
@@ -50,7 +50,7 @@ and conversation history.
 
 ------------------------------------------------------------------------
 
-## 2. Feature Description Processing
+## Feature Description Processing
 
 Feature descriptions --- e.g., project summaries, data reports, or
 design specifications --- are preprocessed before being fed into
@@ -75,7 +75,7 @@ persona expertise.
 
 ------------------------------------------------------------------------
 
-## 3. Conversation Generation
+## Conversation Generation
 
 Conversations simulate an interactive critique between the user and
 multiple personas. The process follows a turn-based design:
@@ -107,7 +107,7 @@ for persona in personas:
 
 ------------------------------------------------------------------------
 
-## 4. Feedback Synthesis
+## Feedback Synthesis
 
 After generating individual persona responses, the system produces a
 **summary report** highlighting key insights and concerns.
@@ -130,7 +130,7 @@ all personas' evaluations.
 
 ------------------------------------------------------------------------
 
-## 5. Underlying AI Architecture
+## Underlying AI Architecture
 
 The simulation architecture combines **symbolic reasoning** (rules,
 goals, and persona metadata) with **neural generation** (GPT-5
@@ -164,7 +164,7 @@ consistent**, **behaviorally diverse**, and **analytically useful**.
 
 ------------------------------------------------------------------------
 
-## 6. Decision-Making Processes
+## Decision-Making Processes
 
 Each persona's decision-making combines deterministic and probabilistic
 components:
@@ -192,7 +192,7 @@ components:
 
 ------------------------------------------------------------------------
 
-## 7. Summary
+## Summary
 
 This simulation framework enables **multi-persona feedback generation**
 by integrating: - **Structured persona modeling** - **Semantic text
