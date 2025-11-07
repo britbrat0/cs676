@@ -176,7 +176,7 @@ components:
   **Response Scoring:** Evaluates multiple candidate responses using an internal reward model (clarity, tone, novelty).
 
   **Tone Calibration:** Adjusts phrasing style (formal, critical, supportive).
-  
+
   **Adaptive Weighting:** Balances between deterministic persona behavior and stochastic creativity from GPT generation.
   -----------------------------------------------------------------------
 
