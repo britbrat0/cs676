@@ -456,83 +456,31 @@ st.header("💬 Conversation History")
 
 if st.session_state.conversation_history.strip():
     conversation_container = st.container()
-
+    
     with conversation_container:
         lines = st.session_state.conversation_history.split("\n")
-
+        
         for line in lines:
-            line = line.strip()
-            if not line:
+            if not line.strip():
                 continue
-
-            # ---- USER QUESTION ----
-            if line.startswith("**User Question:**") or line.startswith("User:"):
-                user_text = re.sub(r"^\*\*User Question:\*\*\s*", "", line)
-                st.markdown(
-                    f"""
-                    <div style="
-                        background-color: #E8F1FF;
-                        border-left: 6px solid #1E90FF;
-                        border-radius: 8px;
-                        padding: 10px 14px;
-                        margin: 10px 0;
-                        font-weight: 600;
-                        color: #003366;
-                    ">
-                        💭 <strong>User:</strong> {user_text}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                continue
-
-            # ---- PERSONA RESPONSES ----
+                
+            # Check if line is from a persona
             matched = False
             for p in selected_personas:
-                persona_name = p["name"]
-                if line.startswith(persona_name + ":") or line.startswith(f"[{persona_name}]"):
+                if line.startswith(p["name"] + ":") or line.startswith(f"[{p['name']}]"):
                     highlight = detect_insight_or_concern(line)
-                    color = get_color_for_persona(persona_name)
-
-                    # Background tint for insight or concern
-                    if highlight == "insight":
-                        background = "#e8f8ee"  # light green
-                    elif highlight == "concern":
-                        background = "#fdeaea"  # light red
-                    else:
-                        background = "#f9f9f9"
-
-                    persona_text = (
-                        line.replace(f"{persona_name}:", "").replace(f"[{persona_name}]", "").strip()
-                    )
-
-                    st.markdown(
-                        f"""
-                        <div style="
-                            border-left: 6px solid {color};
-                            background-color: {background};
-                            border-radius: 8px;
-                            padding: 10px 14px;
-                            margin: 8px 0;
-                            color: {color};
-                            line-height: 1.5;
-                            font-weight: 500;
-                        ">
-                            <strong style="color:{color};">{persona_name}:</strong> {persona_text}
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(format_response_line(line, p["name"], highlight), unsafe_allow_html=True)
                     matched = True
                     break
-
-            # ---- OTHER LINES ----
+            
+            # If not matched to persona, check if it's a user question or other text
             if not matched:
-                st.markdown(
-                    f"<div style='margin-left:10px; color:#444; line-height:1.4;'>{line}</div>",
-                    unsafe_allow_html=True
-                )
-
+                if line.startswith("**User Question:**") or line.startswith("User:"):
+                    st.markdown(f"**{line}**")
+                elif line.startswith("-") or line.startswith("*"):
+                    st.markdown(f"  {line}")
+                else:
+                    st.markdown(line)
 
     st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
 else:
