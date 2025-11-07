@@ -473,7 +473,7 @@ if st.session_state.conversation_history.strip():
                     <div style="
                         background-color: #E8F1FF;
                         border-left: 6px solid #1E90FF;
-                        border-radius: 6px;
+                        border-radius: 8px;
                         padding: 10px 14px;
                         margin: 10px 0;
                         font-weight: 600;
@@ -489,28 +489,36 @@ if st.session_state.conversation_history.strip():
             # ---- PERSONA RESPONSES ----
             matched = False
             for p in selected_personas:
-                if line.startswith(p["name"] + ":") or line.startswith(f"[{p['name']}]"):
+                persona_name = p["name"]
+                if line.startswith(persona_name + ":") or line.startswith(f"[{persona_name}]"):
                     highlight = detect_insight_or_concern(line)
-                    color = get_color_for_persona(p["name"])
+                    color = get_color_for_persona(persona_name)
 
-                    background = "#f9f9f9"
+                    # Background tint for insight or concern
                     if highlight == "insight":
-                        background = "#e8f8ee"  # light green tint
+                        background = "#e8f8ee"  # light green
                     elif highlight == "concern":
-                        background = "#fdeaea"  # light red tint
+                        background = "#fdeaea"  # light red
+                    else:
+                        background = "#f9f9f9"
 
-                    persona_text = line.replace(f"{p['name']}:", "").strip()
+                    persona_text = (
+                        line.replace(f"{persona_name}:", "").replace(f"[{persona_name}]", "").strip()
+                    )
+
                     st.markdown(
                         f"""
                         <div style="
                             border-left: 6px solid {color};
                             background-color: {background};
-                            border-radius: 6px;
+                            border-radius: 8px;
                             padding: 10px 14px;
                             margin: 8px 0;
                             color: {color};
+                            line-height: 1.5;
+                            font-weight: 500;
                         ">
-                            <strong>{p['name']}:</strong> {persona_text}
+                            <strong style="color:{color};">{persona_name}:</strong> {persona_text}
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -520,7 +528,10 @@ if st.session_state.conversation_history.strip():
 
             # ---- OTHER LINES ----
             if not matched:
-                st.markdown(f"<div style='margin-left:10px; color:#555;'>{line}</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='margin-left:10px; color:#444; line-height:1.4;'>{line}</div>",
+                    unsafe_allow_html=True
+                )
 
 
     st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
