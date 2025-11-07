@@ -205,7 +205,7 @@ if "conversation_history" in st.session_state and st.session_state.conversation_
 
 if st.button("Clear Conversation"):
     st.session_state.conversation_history = ""
-    st.experimental_rerun()
+    st.rerun()
 
 # -------------------------
 # Create a new persona
@@ -232,6 +232,6 @@ if st.sidebar.button("Add Persona"):
         with open("personas.json", "w", encoding="utf-8") as f:
             json.dump(st.session_state.personas, f, indent=2)
         st.success(f"Persona '{new_name}' added successfully!")
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.error("Name is required.")
