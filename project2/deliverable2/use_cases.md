@@ -53,21 +53,3 @@
 **Industry:** Enterprise Software  
 **Use:** Personas representing legal, technical, and user teams simulate feedback sessions.  
 **Value:** Accelerates stakeholder consensus through synthetic dialogue.
-
----
-
-## Summary Table
-
-| Stage | Primary Goal | Example Value |
-|--------|---------------|----------------|
-| Early Concept | Find major gaps early | Accessibility & compliance flagged |
-| Detailed Design | Refine interactions | Role-based usability insights |
-| Pre-Launch | Validate before rollout | Bias and perception issues found |
-
----
-
-### Key Benefits
-- Fast, low-cost iteration with realistic simulated feedback  
-- Early detection of usability and compliance risks  
-- Enhanced empathy and team alignment  
-- Stronger product-market fit via contextual insight
