@@ -1,6 +1,5 @@
 # tests/test_app.py
 import os
-import json
 import time
 import pytest
 from unittest.mock import patch, MagicMock
@@ -72,9 +71,8 @@ def test_backup_and_restore(session_state, tmp_path):
 # ----------------------------
 @patch("app.openai.chat.completions.create")
 def test_generate_response(mock_openai, session_state):
-    # Mock a fake API response
     fake_response = MagicMock()
-    fake_response.choices = [MagicMock(message=MagicMock(content="Test Persona 1: response\nTest Persona 2: response"))]
+    fake_response.choices = [MagicMock(message=MagicMock(content="Test Persona 1 response\nTest Persona 2 response"))]
     mock_openai.return_value = fake_response
 
     feature_inputs = {"Text Description": "Test feature", "File Upload": []}
