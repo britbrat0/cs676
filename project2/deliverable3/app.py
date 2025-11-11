@@ -313,6 +313,9 @@ def generate_response(feature_inputs, personas, conversation_history=None, model
         st.error(f"❌ Error generating response: {str(e)}")
         return ""
 
+    print("DEBUG: generate_response called with:", feature_inputs)
+    return "dummy"  # add temporarily to confirm
+
 # -------------------------
 # Feedback Report
 # -------------------------
