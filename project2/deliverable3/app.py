@@ -1,247 +1,624 @@
-# app.py
-import os
-import logging
-import json
-import re
-from typing import List, Optional
-
 import streamlit as st
 import openai
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+import json
+import re
+import pandas as pd
+import altair as alt
+import threading
+import time
+import os
 from prometheus_client import Counter, Histogram, start_http_server
-from sqlalchemy import create_engine, Column, Integer, String, JSON, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-import sentry_sdk
-import streamlit_authenticator as stauth
 
-# -------------------------
-# Configuration from ENV
-# -------------------------
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-SENTRY_DSN = os.environ.get("SENTRY_DSN")
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./personas.db")
-PROMETHEUS_METRICS_PORT = int(os.environ.get("PROMETHEUS_METRICS_PORT", "8000"))
-APP_NAME = os.environ.get("APP_NAME", "persona-feedback-simulator")
 
-# Sentry (optional)
-if SENTRY_DSN:
-    sentry_sdk.init(SENTRY_DSN, traces_sample_rate=0.1, environment=os.environ.get("ENV", "development"))
-
-# Prometheus metrics (expose on separate port)
+# ===========================
+# Metrics (Prometheus)
+# ===========================
 REQUEST_COUNTER = Counter("app_requests_total", "Total app requests", ["endpoint", "status"])
-OPENAI_LATENCY = Histogram("openai_request_latency_seconds", "OpenAI request latency seconds")
-OPENAI_ERRORS = Counter("openai_errors_total", "OpenAI errors", ["type"])
+RESPONSE_TIME = Histogram("app_response_time_seconds", "Response time per endpoint", ["endpoint"])
 
-# Start prometheus HTTP server (non-blocking)
-start_http_server(PROMETHEUS_METRICS_PORT)
-
-# -------------------------
-# Logging
-# -------------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-logger = logging.getLogger(APP_NAME)
-
-# -------------------------
-# OpenAI config
-# -------------------------
-if not OPENAI_API_KEY:
-    logger.error("OPENAI_API_KEY environment variable not set. Exiting.")
-    raise RuntimeError("OPENAI_API_KEY must be set in environment variables")
-openai.api_key = OPENAI_API_KEY
-
-# -------------------------
-# Database (SQLAlchemy)
-# -------------------------
-Base = declarative_base()
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {})
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-
-class Persona(Base):
-    __tablename__ = "personas"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    occupation = Column(String, nullable=False)
-    location = Column(String, nullable=True)
-    tech_proficiency = Column(String, nullable=True)
-    behavioral_traits = Column(Text, nullable=True)  # JSON string
-
-Base.metadata.create_all(bind=engine)
-
-
-def get_db() -> Session:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# -------------------------
-# Utility: Personas
-# -------------------------
-def load_personas_from_db() -> List[dict]:
-    db = next(get_db())
-    rows = db.query(Persona).all()
-    personas = []
-    for r in rows:
-        traits = []
-        if r.behavioral_traits:
+def instrumented(endpoint):
+    """Decorator to instrument function execution time and errors."""
+    def decorator(fn):
+        def wrapper(*args, **kwargs):
+            start = time.time()
             try:
-                traits = json.loads(r.behavioral_traits)
+                result = fn(*args, **kwargs)
+                REQUEST_COUNTER.labels(endpoint=endpoint, status="success").inc()
+                return result
             except Exception:
-                traits = [t.strip() for t in r.behavioral_traits.split(",") if t.strip()]
-        personas.append({
-            "id": r.id,
-            "name": r.name,
-            "occupation": r.occupation,
-            "location": r.location or "Unknown",
-            "tech_proficiency": r.tech_proficiency or "Medium",
-            "behavioral_traits": traits
-        })
-    return personas
+                REQUEST_COUNTER.labels(endpoint=endpoint, status="error").inc()
+                raise
+            finally:
+                RESPONSE_TIME.labels(endpoint=endpoint).observe(time.time() - start)
+        return wrapper
+    return decorator
 
+# Start Prometheus metrics server on port 8000
+def start_metrics_server():
+    start_http_server(8000)
 
-def save_persona_to_db(p: dict):
-    db = next(get_db())
-    persona = Persona(
-        name=p["name"],
-        occupation=p["occupation"],
-        location=p.get("location", "Unknown"),
-        tech_proficiency=p.get("tech_proficiency", "Medium"),
-        behavioral_traits=json.dumps(p.get("behavioral_traits", []))
-    )
-    db.add(persona)
-    db.commit()
-    db.refresh(persona)
-    return persona
+metrics_thread = threading.Thread(target=start_metrics_server, daemon=True)
+metrics_thread.start()
 
+# ===========================
+# Simple Health HTTP server
+# ===========================
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# -------------------------
-# OpenAI call with retry/backoff
-# -------------------------
-class OpenAITransientError(Exception):
-    pass
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
 
+def start_health_server():
+    port = int(os.environ.get("HEALTH_PORT", "8080"))
+    server = HTTPServer(("", port), HealthHandler)
+    server.serve_forever()
 
-@retry(
-    retry=retry_if_exception_type((OpenAITransientError,)),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    stop=stop_after_attempt(4)
-)
-def openai_chat_completion(messages, model="gpt-4o-mini", max_tokens=2000, temperature=0.8):
-    with OPENAI_LATENCY.time():
-        try:
-            resp = openai.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            return resp.choices[0].message.content
-        except openai.error.RateLimitError as e:
-            OPENAI_ERRORS.labels(type="rate_limit").inc()
-            logger.warning("OpenAI rate limit: %s", str(e))
-            raise OpenAITransientError from e
-        except openai.error.APIError as e:
-            OPENAI_ERRORS.labels(type="api_error").inc()
-            logger.warning("OpenAI API error: %s", str(e))
-            raise OpenAITransientError from e
-        except Exception as e:
-            OPENAI_ERRORS.labels(type="other").inc()
-            logger.exception("OpenAI unexpected error")
-            # non-retryable - rethrow
-            raise
+health_thread = threading.Thread(target=start_health_server, daemon=True)
+health_thread.start()
 
 
 # -------------------------
-# Authentication (streamlit_authenticator)
-# - For production, replace with OAuth/OIDC (Auth0, Google, etc.)
-# -------------------------
-# Example credentials (use secrets manager in production)
-secrets_users = json.loads(os.environ.get("AUTH_USERS_JSON", "[]"))  # e.g. [{"name":"admin","username":"admin","password":"hashedpw"}]
-if secrets_users:
-    # create credentials structure expected by streamlit_authenticator
-    names = [u["name"] for u in secrets_users]
-    usernames = [u["username"] for u in secrets_users]
-    # You must provide hashed passwords; for demo we read plaintext (NOT FOR PROD)
-    passwords = [u.get("password", "") for u in secrets_users]
-    credentials = {"usernames": {usernames[i]: {"name": names[i], "password": passwords[i]} for i in range(len(usernames))}}
-    authenticator = stauth.Authenticate(credentials, APP_NAME, "cookie", 3600)
-    name, authentication_status, username = authenticator.login("Login", "sidebar")
-else:
-    # No authentication configured - restrict if running in prod
-    authentication_status = True
-    name = "anonymous"
-
-if not authentication_status:
-    st.error("Authentication failed. Contact admin.")
-    st.stop()
-
-
-# -------------------------
-# Streamlit UI (main)
+# Page Config
 # -------------------------
 st.set_page_config(page_title="Persona Feedback Simulator", page_icon="💬", layout="wide")
-st.title("💬 Persona Feedback Simulator (Production Blueprint)")
-st.markdown("This deployment uses server-side OpenAI keys, DB-backed personas, retries, logging, Sentry & Prometheus metrics.")
 
-# Load personas from DB to session state once
+# -------------------------
+# Session State Initialization
+# -------------------------
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = ""
 if "personas" not in st.session_state:
-    st.session_state.personas = load_personas_from_db()
+    st.session_state.personas = []
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
 
-# The rest of your original UI follows, with small modifications:
-# - no API key entry in sidebar
-# - persona CRUD calls to DB using save_persona_to_db / load_personas_from_db
-# - use openai_chat_completion(...) wrapper for generation
+# -------------------------
+# Sidebar - API Key Input
+# -------------------------
+st.sidebar.header("🔑 API Configuration")
+api_key_input = st.sidebar.text_input(
+    "Enter OpenAI API Key",
+    type="password",
+    value=st.session_state.api_key,
+    help="Your API key is not stored permanently"
+)
 
-# Example: simplified 'Ask Personas' flow (you can re-integrate your full UI)
-question = st.text_input("Ask the personas a question")
-selected = st.multiselect("Select personas", [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas])
+if api_key_input:
+    st.session_state.api_key = api_key_input
+    openai.api_key = api_key_input
+    st.sidebar.success("✅ API Key Set")
+else:
+    st.sidebar.warning("⚠️ Please enter your OpenAI API key to use the app")
 
-if st.button("Ask"):
-    REQUEST_COUNTER.labels(endpoint="/ask", status="start").inc()
-    if not question:
-        st.warning("Ask something!")
-    else:
-        # Build messages like before
-        personas = [p for p in st.session_state.personas if f"{p['name']} ({p['occupation']})" in selected]
-        # minimal prompt
-        messages = [
-            {"role": "system", "content": "You are a facilitator."},
-            {"role": "user", "content": f"Personas: {json.dumps(personas)}\nQuestion: {question}"}
-        ]
-        try:
-            text = openai_chat_completion(messages)
-            REQUEST_COUNTER.labels(endpoint="/ask", status="success").inc()
-            st.markdown("**AI Response**")
-            st.write(text)
-        except Exception as e:
-            REQUEST_COUNTER.labels(endpoint="/ask", status="error").inc()
-            logger.exception("Failed to call OpenAI")
-            st.error("Failed to get response. Administrators have been notified.")
+# Model selection
+model_choice = st.sidebar.selectbox(
+    "Select Model",
+    ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+    index=0,
+    help="gpt-4o-mini is faster and cheaper, gpt-4o is more capable"
+)
 
+# -------------------------
+# Load Personas
+# -------------------------
+try:
+    with open("personas.json", "r", encoding="utf-8") as f:
+        persona_data = json.load(f)
+    if "personas" not in st.session_state or not st.session_state.personas:
+        st.session_state.personas = persona_data
+except FileNotFoundError:
+    st.warning("personas.json not found. Starting with empty persona list.")
+    persona_data = []
+    st.session_state.personas = []
 
-# Persona creation (saved to DB)
-with st.sidebar.form("new_persona_form"):
-    new_name = st.text_input("Name*")
-    new_occ = st.text_input("Occupation*")
-    new_loc = st.text_input("Location")
-    new_tech = st.selectbox("Tech proficiency", ["Low", "Medium", "High"])
-    new_traits = st.text_area("Traits (comma-separated)")
-    submitted = st.form_submit_button("Add Persona")
-    if submitted:
-        if not new_name or not new_occ:
-            st.error("Name & Occupation required")
+def get_persona_by_id(pid):
+    for p in st.session_state.personas:
+        if p["id"] == pid:
+            return p
+    return None
+
+# -------------------------
+# Persona Colors
+# -------------------------
+PERSONA_COLORS = {
+    "Sophia Martinez": "#E6194B",
+    "Jamal Robinson": "#3CB44B",
+    "Eleanor Chen": "#FFE119",
+    "Diego Alvarez": "#4363D8",
+    "Anita Patel": "#F58231",
+    "Robert Klein": "#911EB4",
+    "Nia Thompson": "#46F0F0",
+    "Marcus Green": "#F032E6",
+    "Aisha Mbatha": "#BCF60C",
+    "Owen Gallagher": "#FABEBE",
+}
+
+def get_color_for_persona(persona_name):
+    """Get color for persona, generate if not exists"""
+    if persona_name in PERSONA_COLORS:
+        return PERSONA_COLORS[persona_name]
+    # Generate a hash-based color for new personas
+    hash_val = hash(persona_name)
+    color = f"#{(hash_val & 0xFFFFFF):06x}"
+    PERSONA_COLORS[persona_name] = color
+    return color
+
+def format_response_line(text, persona_name, highlight=None):
+    color = get_color_for_persona(persona_name)
+    background = ""
+    if highlight == "insight":
+        background = "background-color: #d4edda;"
+    elif highlight == "concern":
+        background = "background-color: #f8d7da;"
+    return f'<div style="color: {color}; {background} padding: 8px; margin: 4px 0; border-left: 4px solid {color}; border-radius: 4px; white-space: pre-wrap;">{text}</div>'
+
+def detect_insight_or_concern(text):
+    lower_text = text.lower()
+    if re.search(r'\b(think|like|improve|great|benefit|love|helpful|excellent|wonderful)\b', lower_text):
+        return "insight"
+    if re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard|confused|frustrated)\b', lower_text):
+        return "concern"
+    return None
+
+# -------------------------
+# Build GPT Prompt
+# -------------------------
+def build_prompt(personas, feature_inputs, conversation_history=None):
+    persona_descriptions = "\n".join([
+        f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})"
+        for p in personas
+    ])
+    
+    feature_description = ""
+    for key, value in feature_inputs.items():
+        if isinstance(value, list):
+            value_text = ", ".join(value) if value else "None"
         else:
-            p = {
+            value_text = value.strip() if value else "None"
+        feature_description += f"{key}:\n{value_text}\n\n"
+
+    prompt = f"""
+Personas:
+{persona_descriptions}
+
+Feature Inputs:
+{feature_description}
+
+Simulate a realistic conversation between these personas about this feature.
+- Each persona should speak in turn, but keep responses concise (2-3 sentences each).
+- Use the following template for each persona's response:
+
+[Persona Name]:
+- Response: <what they say>
+- Reasoning: <why they think that>
+- Confidence: <High / Medium / Low>
+- Suggested follow-up: <next question they might ask>
+
+Keep the conversation natural and engaging. Each persona should provide unique perspectives based on their background.
+"""
+    if conversation_history:
+        prompt += "\n\nPrevious conversation:\n" + conversation_history
+        prompt += "\n\nContinue the conversation naturally based on the above context."
+    return prompt.strip()
+
+# -------------------------
+# Generate GPT Response
+# -------------------------
+def generate_response(feature_inputs, personas, conversation_history=None, model="gpt-4o-mini"):
+    if not st.session_state.api_key:
+        st.error("Please enter your OpenAI API key in the sidebar.")
+        return ""
+    
+    try:
+        prompt = build_prompt(personas, feature_inputs, conversation_history)
+        response = openai.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are an AI facilitator for a virtual focus group. Simulate realistic, diverse perspectives from each persona based on their unique backgrounds and traits."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2000,
+            temperature=0.8
+        )
+        conversation_update = response.choices[0].message.content
+        return conversation_update.strip() + "\n"
+    except openai.AuthenticationError:
+        st.error("❌ Invalid API key. Please check your OpenAI API key.")
+        return ""
+    except openai.RateLimitError:
+        st.error("❌ Rate limit exceeded. Please wait and try again.")
+        return ""
+    except Exception as e:
+        st.error(f"❌ Error generating response: {str(e)}")
+        return ""
+
+# -------------------------
+# Feedback Report
+# -------------------------
+def generate_feedback_report(conversation, model="gpt-4o-mini"):
+    if not st.session_state.api_key:
+        st.error("Please enter your OpenAI API key in the sidebar.")
+        return ""
+    
+    try:
+        prompt = f"""
+Analyze the following conversation and create a structured feedback report:
+
+Conversation:
+{conversation}
+
+Create a comprehensive report with the following sections:
+
+## Executive Summary
+Brief overview of key findings
+
+## Patterns and Themes
+Identify recurring topics and sentiments
+
+## Consensus Points
+Areas where personas agree
+
+## Disagreements and Concerns
+Areas of divergence and specific concerns raised
+
+## Persona-Specific Insights
+Key takeaways from each persona
+
+## Actionable Recommendations
+Concrete next steps for feature improvements (prioritized)
+
+## Quantitative Metrics
+Estimate:
+- Overall acceptance rate (%)
+- Likelihood of usage by persona segment
+- Priority level (High/Medium/Low)
+
+## Risk Assessment
+Potential blockers or deal-breakers identified
+
+Keep the report concise but actionable.
+"""
+        response = openai.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are an expert product analyst and UX researcher. Provide actionable, data-driven insights."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2500,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"❌ Error generating report: {str(e)}")
+        return ""
+
+# -------------------------
+# Main App UI
+# -------------------------
+st.title("💬 Persona Feedback Simulator")
+st.markdown("*Simulate realistic user feedback from diverse personas for your product features*")
+
+# Check API key before proceeding
+if not st.session_state.api_key:
+    st.info("👈 Please enter your OpenAI API key in the sidebar to get started.")
+    st.stop()
+
+st.markdown("---")
+
+# Feature Input Section
+st.header("📝 Feature Description")
+tabs = st.tabs(["Text Description", "File Upload"])
+
+with tabs[0]:
+    text_desc = st.text_area(
+        "Enter a textual description of your feature",
+        height=150,
+        placeholder="Example: A new dark mode toggle that automatically adjusts based on time of day..."
+    )
+
+with tabs[1]:
+    uploaded_files = st.file_uploader(
+        "Upload wireframes/mockups (optional)",
+        type=["png", "jpg", "jpeg", "pdf"],
+        accept_multiple_files=True,
+        help="File content is not yet processed, only filenames are shared with personas"
+    )
+
+feature_inputs = {
+    "Text Description": text_desc,
+    "Files": [f.name for f in uploaded_files] if uploaded_files else []
+}
+
+st.markdown("---")
+
+# Persona Selection
+st.header("👥 Select Personas")
+
+if not st.session_state.personas:
+    st.warning("No personas available. Create personas in the sidebar.")
+else:
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
+        selected_personas_str = st.multiselect(
+            "Choose personas to participate in the discussion",
+            persona_options,
+            default=persona_options[:3] if len(persona_options) >= 3 else persona_options
+        )
+        selected_personas = [
+            p for p in st.session_state.personas 
+            if f"{p['name']} ({p['occupation']})" in selected_personas_str
+        ]
+    
+    with col2:
+        st.metric("Selected", len(selected_personas))
+        if st.button("Select All"):
+            selected_personas_str = persona_options
+            st.rerun()
+
+# Display selected personas
+if selected_personas:
+    with st.expander("📋 View Selected Persona Details", expanded=False):
+        for p in selected_personas:
+            color = get_color_for_persona(p['name'])
+            st.markdown(
+                f"<div style='border-left: 4px solid {color}; padding: 10px; margin: 5px 0;'>"
+                f"<strong>{p['name']}</strong> - {p['occupation']}<br>"
+                f"<small>📍 {p['location']} | 💻 Tech: {p['tech_proficiency']} | "
+                f"Traits: {', '.join(p['behavioral_traits'])}</small>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+st.markdown("---")
+
+# Interaction Section
+st.header("💭 Ask Your Question")
+user_question = st.text_input(
+    "What would you like to ask the personas?",
+    placeholder="Example: What do you think about this feature? Would you use it daily?"
+)
+
+# Action Buttons
+col1, col2, col3 = st.columns([2, 2, 1])
+
+with col1:
+    ask_button = st.button("🎯 Ask Personas", type="primary", use_container_width=True)
+
+with col2:
+    report_button = st.button("📊 Generate Feedback Report", use_container_width=True)
+
+with col3:
+    clear_button = st.button("🗑️ Clear", use_container_width=True)
+
+# Handle Ask Personas
+if ask_button:
+    if not selected_personas:
+        st.warning("⚠️ Please select at least one persona!")
+    elif not user_question.strip() and not text_desc.strip():
+        st.warning("⚠️ Please enter a question or feature description!")
+    else:
+        with st.spinner("🤔 Personas are thinking..."):
+            # Add user question to history
+            if user_question.strip():
+                st.session_state.conversation_history += f"\n**User Question:** {user_question}\n\n"
+            
+            # Generate response
+            response = generate_response(
+                feature_inputs,
+                selected_personas,
+                st.session_state.conversation_history,
+                model=model_choice
+            )
+            
+            if response:
+                st.session_state.conversation_history += response + "\n"
+                st.success("✅ Personas have responded!")
+                st.rerun()
+
+# Handle Generate Report
+if report_button:
+    if not st.session_state.conversation_history.strip():
+        st.warning("⚠️ No conversation history yet. Ask personas some questions first!")
+    else:
+        with st.spinner("📊 Analyzing conversation and generating report..."):
+            report = generate_feedback_report(st.session_state.conversation_history, model=model_choice)
+            if report:
+                st.markdown("---")
+                st.markdown("## 📊 Feedback Analysis Report")
+
+                # --- Extract Quantitative Data ---
+                acceptance_rate = None
+                usage_by_persona = {}
+                priority_level = None
+
+                # Try to extract numeric estimates from the report
+                acceptance_match = re.search(r"acceptance rate[^0-9]*(\d{1,3})%", report, re.IGNORECASE)
+                if acceptance_match:
+                    acceptance_rate = int(acceptance_match.group(1))
+
+                # Try to find priority level
+                priority_match = re.search(r"priority level[^:]*:\s*(High|Medium|Low)", report, re.IGNORECASE)
+                if priority_match:
+                    priority_level = priority_match.group(1).capitalize()
+
+                # Try to extract persona usage likelihoods if listed (e.g., "Sophia Martinez – 80%")
+                for line in report.splitlines():
+                    m = re.match(r"[-*]?\s*([A-Za-z ]+)\s*[-–]\s*(\d{1,3})%", line.strip())
+                    if m:
+                        usage_by_persona[m.group(1).strip()] = int(m.group(2))
+
+                # --- Display Metrics ---
+                metrics_col1, metrics_col2 = st.columns(2)
+                with metrics_col1:
+                    if acceptance_rate is not None:
+                        st.metric("Overall Acceptance Rate", f"{acceptance_rate}%")
+                        st.progress(acceptance_rate / 100)
+                with metrics_col2:
+                    if priority_level:
+                        priority_color = {
+                            "High": "🔴 High",
+                            "Medium": "🟠 Medium",
+                            "Low": "🟢 Low"
+                        }.get(priority_level, priority_level)
+                        st.metric("Priority Level", priority_color)
+
+                # --- Persona Usage Visualization ---
+                if usage_by_persona:
+                    df_usage = pd.DataFrame({
+                        "Persona": list(usage_by_persona.keys()),
+                        "Likelihood of Use (%)": list(usage_by_persona.values())
+                    })
+
+                    chart = (
+                        alt.Chart(df_usage)
+                        .mark_bar(color="#3CB44B")
+                        .encode(
+                            x=alt.X("Likelihood of Use (%)", scale=alt.Scale(domain=[0, 100])),
+                            y=alt.Y("Persona", sort="-x"),
+                            tooltip=["Persona", "Likelihood of Use (%)"]
+                        )
+                        .properties(title="Persona Likelihood of Feature Usage", height=300)
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+
+                st.markdown("---")
+                st.markdown(report)
+
+                # --- Download button ---
+                st.download_button(
+                    label="⬇️ Download Report",
+                    data=report,
+                    file_name="persona_feedback_report.md",
+                    mime="text/markdown"
+                )
+
+# Handle Clear
+if clear_button:
+    st.session_state.conversation_history = ""
+    st.success("🗑️ Conversation cleared!")
+    st.rerun()
+
+st.markdown("---")
+
+# Conversation History Display
+st.header("💬 Conversation History")
+
+if st.session_state.conversation_history.strip():
+    conversation_container = st.container()
+    
+    with conversation_container:
+        lines = st.session_state.conversation_history.split("\n")
+        
+        for line in lines:
+            if not line.strip():
+                continue
+                
+            # Check if line is from a persona
+            matched = False
+            for p in selected_personas:
+                if line.startswith(p["name"] + ":") or line.startswith(f"[{p['name']}]"):
+                    highlight = detect_insight_or_concern(line)
+                    st.markdown(format_response_line(line, p["name"], highlight), unsafe_allow_html=True)
+                    matched = True
+                    break
+            
+            # If not matched to persona, check if it's a user question or other text
+            if not matched:
+                if line.startswith("**User Question:**") or line.startswith("User:"):
+                    st.markdown(f"**{line}**")
+                elif line.startswith("-") or line.startswith("*"):
+                    st.markdown(f"  {line}")
+                else:
+                    st.markdown(line)
+
+    st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
+else:
+    st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
+# -------------------------
+# Sidebar - Persona Management
+# -------------------------
+st.sidebar.markdown("---")
+st.sidebar.header("➕ Create New Persona")
+
+with st.sidebar.form("new_persona_form"):
+    new_name = st.text_input("Name*", placeholder="e.g., Alex Johnson")
+    new_occupation = st.text_input("Occupation*", placeholder="e.g., Software Engineer")
+    new_location = st.text_input("Location", placeholder="e.g., Seattle, WA")
+    new_tech = st.selectbox("Tech Proficiency*", ["Low", "Medium", "High"], index=1)
+    new_traits = st.text_area(
+        "Behavioral Traits (comma-separated)",
+        placeholder="e.g., detail-oriented, skeptical, early adopter"
+    )
+    
+    submit_persona = st.form_submit_button("Add Persona", use_container_width=True)
+    
+    if submit_persona:
+        if not new_name.strip():
+            st.error("❌ Name is required!")
+        elif not new_occupation.strip():
+            st.error("❌ Occupation is required!")
+        else:
+            new_persona = {
+                "id": f"p{len(st.session_state.personas) + 1}",
                 "name": new_name.strip(),
-                "occupation": new_occ.strip(),
-                "location": new_loc.strip(),
+                "occupation": new_occupation.strip(),
+                "location": new_location.strip() or "Unknown",
                 "tech_proficiency": new_tech,
                 "behavioral_traits": [t.strip() for t in new_traits.split(",") if t.strip()]
             }
-            save_persona_to_db(p)
-            st.success("Saved persona")
-            st.experimental_rerun()
+            st.session_state.personas.append(new_persona)
+            
+            # Save to JSON
+            try:
+                with open("personas.json", "w", encoding="utf-8") as f:
+                    json.dump(st.session_state.personas, f, indent=2)
+                st.success(f"✅ Persona '{new_name}' added successfully!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error saving persona: {str(e)}")
+
+# Display existing personas count
+st.sidebar.markdown("---")
+st.sidebar.metric("Total Personas", len(st.session_state.personas))
+
+# Export/Import Personas
+with st.sidebar.expander("🔄 Export/Import Personas"):
+    if st.button("📥 Export Personas"):
+        personas_json = json.dumps(st.session_state.personas, indent=2)
+        st.download_button(
+            label="Download personas.json",
+            data=personas_json,
+            file_name="personas.json",
+            mime="application/json"
+        )
+    
+    uploaded_personas = st.file_uploader("📤 Import Personas", type=["json"])
+    if uploaded_personas:
+        try:
+            imported_personas = json.load(uploaded_personas)
+            st.session_state.personas = imported_personas
+            with open("personas.json", "w", encoding="utf-8") as f:
+                json.dump(imported_personas, f, indent=2)
+            st.success("✅ Personas imported successfully!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Error importing personas: {str(e)}")
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📖 About")
+st.sidebar.info(
+    "This tool simulates user feedback from diverse personas to help you validate "
+    "product ideas and features before development."
+)
