@@ -132,17 +132,45 @@ model_choice = st.sidebar.selectbox(
     help="gpt-4o-mini is faster and cheaper, gpt-4o is more capable"
 )
 
+
 # -------------------------
-# Load Personas (Path-Safe)
+# Load Personas (Path-Safe with Backup & Recovery)
 # -------------------------
-import os
-import json
-import streamlit as st
 
 # Get the directory of the current app.py file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PERSONA_PATH = os.path.join(BASE_DIR, "personas.json")
+BACKUP_FILE = os.path.join(BASE_DIR, "personas_backup.json")
 
+# -------------------------
+# Backup & Recovery Helpers
+# -------------------------
+def backup_personas():
+    """Save current personas to a local backup file."""
+    try:
+        with open(BACKUP_FILE, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.personas, f, indent=2)
+        st.info("💾 Personas saved to backup.")
+    except Exception as e:
+        st.error(f"⚠️ Failed to write backup: {e}")
+
+def restore_backup():
+    """Restore personas from backup if primary file missing or corrupted."""
+    if os.path.exists(BACKUP_FILE):
+        try:
+            with open(BACKUP_FILE, "r", encoding="utf-8") as f:
+                backup_data = json.load(f)
+            st.session_state.personas = backup_data
+            st.success("✅ Personas restored from backup.")
+        except Exception as e:
+            st.error(f"⚠️ Backup restore failed: {e}")
+    else:
+        st.warning("⚠️ No backup file found. Starting with an empty persona list.")
+        st.session_state.personas = []
+
+# -------------------------
+# Load Personas
+# -------------------------
 try:
     # Load personas relative to the script location
     with open(PERSONA_PATH, "r", encoding="utf-8") as f:
@@ -153,10 +181,15 @@ try:
         st.session_state.personas = persona_data
 
 except FileNotFoundError:
-    st.warning(f"⚠️ personas.json not found at: {PERSONA_PATH}. Starting with an empty list.")
-    persona_data = []
-    st.session_state.personas = []
+    st.warning(f"⚠️ personas.json not found at {PERSONA_PATH}. Trying backup...")
+    restore_backup()
+except json.JSONDecodeError:
+    st.error("⚠️ personas.json is corrupted. Attempting to restore from backup...")
+    restore_backup()
 
+# -------------------------
+# Utility: Get Persona by ID
+# -------------------------
 def get_persona_by_id(pid):
     """Fetch a persona by ID."""
     for p in st.session_state.personas:
