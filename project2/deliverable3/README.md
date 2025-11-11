@@ -5,7 +5,7 @@ This version includes production-ready improvements such as modular design, auth
 
 ---
 
-## 🚀 Features
+## Features
 
 Persona creation, editing, and simulation  
 OpenAI API integration  
