@@ -16,27 +16,6 @@ This version includes production-ready improvements such as modular design, auth
 - **Deployment ready**: Works on Streamlit Cloud or GitHub Codespaces.
 - **Monitoring hooks**: Metrics and logging for production use.
 
----
-
-## Project Structure
-
-```
-project/
-│
-├─ app.py                  # Main Streamlit app
-├─ utils/
-│  ├─ response.py          # Response generation functions
-│  ├─ personas.py          # Persona management
-│  └─ helpers.py           # Misc helper functions
-├─ database/
-│  ├─ db.py                # Database connection and queries
-│  └─ models.py            # Persona data models
-├─ tests/
-│  ├─ test_app.py          # Unit tests
-│  └─ conftest.py          # Test fixtures
-├─ requirements.txt        # Python dependencies
-└─ README.md               # This file
-```
 
 ---
 
