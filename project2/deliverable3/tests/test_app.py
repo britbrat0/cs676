@@ -3,6 +3,14 @@ import time
 import concurrent.futures
 from app import backup_personas, restore_personas, get_persona_by_id, generate_response
 
+import os
+
+# --- TEST OVERRIDE: Disable real API calls during pytest ---
+if "PYTEST_CURRENT_TEST" in os.environ:
+    def generate_response(feature_inputs, personas):
+        """Mocked response used only for tests"""
+        return f"Mocked feedback for {personas[0]['name'] if personas else 'Unknown Persona'}"
+
 @pytest.fixture
 def session_state():
     class MockSessionState:
