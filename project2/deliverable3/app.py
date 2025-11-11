@@ -133,23 +133,37 @@ model_choice = st.sidebar.selectbox(
 )
 
 # -------------------------
-# Load Personas
+# Load Personas (Path-Safe)
 # -------------------------
+import os
+import json
+import streamlit as st
+
+# Get the directory of the current app.py file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PERSONA_PATH = os.path.join(BASE_DIR, "personas.json")
+
 try:
-    with open("personas.json", "r", encoding="utf-8") as f:
+    # Load personas relative to the script location
+    with open(PERSONA_PATH, "r", encoding="utf-8") as f:
         persona_data = json.load(f)
+
+    # Initialize in session_state if not already loaded
     if "personas" not in st.session_state or not st.session_state.personas:
         st.session_state.personas = persona_data
+
 except FileNotFoundError:
-    st.warning("personas.json not found. Starting with empty persona list.")
+    st.warning(f"⚠️ personas.json not found at: {PERSONA_PATH}. Starting with an empty list.")
     persona_data = []
     st.session_state.personas = []
 
 def get_persona_by_id(pid):
+    """Fetch a persona by ID."""
     for p in st.session_state.personas:
-        if p["id"] == pid:
+        if p.get("id") == pid:
             return p
     return None
+
 
 # -------------------------
 # Persona Colors
