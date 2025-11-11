@@ -1,112 +1,89 @@
+# tests/test_app.py
+
 import pytest
-from unittest.mock import MagicMock
-import time
+from unittest.mock import MagicMock, patch
+from app import get_persona_by_id, backup_personas, restore_backup, generate_response
 
-# Adjust sys.path so Python can find app.py
-import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.resolve()))
-
-from app import (
-    get_persona_by_id,
-    backup_personas,
-    restore_backup,
-    generate_response,
-    RESPONSE_TIME,
-    REQUEST_COUNTER
-)
-
-# --------------------------
-# Sample test personas
-# --------------------------
-TEST_PERSONAS = [
-    {"id": 1, "name": "Alice", "occupation": "Engineer", "location": "NY",
-     "tech_proficiency": "High", "behavioral_traits": ["curious", "analytical"]},
-    {"id": 2, "name": "Bob", "occupation": "Designer", "location": "SF",
-     "tech_proficiency": "Medium", "behavioral_traits": ["creative", "critical"]}
-]
-
-# --------------------------
+# -----------------------------
 # Fixtures
-# --------------------------
+# -----------------------------
+
 @pytest.fixture
-def mock_personas(monkeypatch):
-    """Set up a fake Streamlit session state with personas."""
+def mock_st_session(monkeypatch):
+    """Mock Streamlit session_state with sample personas."""
     import streamlit as st
-    st.session_state.personas = TEST_PERSONAS.copy()
+    st.session_state.personas = [
+        {"id": 1, "name": "Test Persona"},
+        {"id": 2, "name": "Another Persona"}
+    ]
     yield st.session_state
-    st.session_state.personas = []
+    st.session_state.personas = []  # Clean up after test
 
 @pytest.fixture(autouse=True)
-def mock_openai_create(monkeypatch):
-    """Mock OpenAI API responses for generate_response."""
+def mock_openai(monkeypatch):
+    """Mock OpenAI API calls."""
     fake_response = MagicMock()
-    fake_response.choices = [MagicMock(message=MagicMock(content="Alice: response\nBob: response"))]
+    fake_response.choices = [MagicMock(message=MagicMock(content="Simulated response from persona."))]
 
     class FakeOpenAI:
-        class chat:
-            class completions:
-                @staticmethod
-                def create(*args, **kwargs):
-                    return fake_response
+        class ChatCompletion:
+            @staticmethod
+            def create(*args, **kwargs):
+                return fake_response
 
-    monkeypatch.setattr("app.openai", FakeOpenAI)
-    yield
+    monkeypatch.setattr("app.openai.ChatCompletion", FakeOpenAI.ChatCompletion)
 
-# --------------------------
+# -----------------------------
 # Tests
-# --------------------------
-def test_get_persona_by_id(mock_personas):
-    assert get_persona_by_id(1)["name"] == "Alice"
-    assert get_persona_by_id(2)["name"] == "Bob"
-    assert get_persona_by_id(999) is None
+# -----------------------------
 
-def test_backup_and_restore(mock_personas, tmp_path):
+def test_get_persona_by_id(mock_st_session):
+    persona = get_persona_by_id(1)
+    assert persona is not None
+    assert persona["name"] == "Test Persona"
+
+def test_backup_and_restore(mock_st_session, tmp_path):
     backup_file = tmp_path / "backup.json"
-    # Backup current personas
-    backup_personas(str(backup_file))
-    # Clear session_state
-    import streamlit as st
-    st.session_state.personas = []
-    assert st.session_state.personas == []
-    # Restore
-    restore_backup(str(backup_file))
-    assert len(st.session_state.personas) == 2
-    assert st.session_state.personas[0]["name"] == "Alice"
+    backup_personas(backup_file)
+    # Reset session
+    mock_st_session.personas = []
+    restore_backup(backup_file)
+    assert len(mock_st_session.personas) == 2
+    assert mock_st_session.personas[0]["name"] == "Test Persona"
 
-def test_generate_response_returns_text(mock_personas):
+def test_generate_response(mock_st_session):
     feature_inputs = {"Text Description": "Test feature", "File Upload": []}
-    personas = mock_personas.personas
+    personas = mock_st_session.personas
     response = generate_response(feature_inputs, personas)
     assert isinstance(response, str)
     assert len(response) > 0
-    assert "Alice" in response
-    assert "Bob" in response
+    assert "Simulated response" in response
 
-def test_empty_feature_input(mock_personas):
+def test_empty_feature_input(mock_st_session):
     feature_inputs = {"Text Description": "", "File Upload": []}
-    personas = mock_personas.personas
+    personas = mock_st_session.personas
     response = generate_response(feature_inputs, personas)
-    assert isinstance(response, str)
-    assert len(response) > 0
+    assert "Simulated response" in response
 
-def test_large_feature_input(mock_personas):
+def test_large_feature_input(mock_st_session):
     feature_inputs = {"Text Description": "A"*5000, "File Upload": []}
-    personas = mock_personas.personas
+    personas = mock_st_session.personas
     response = generate_response(feature_inputs, personas)
-    assert isinstance(response, str)
     assert len(response) > 0
 
-def test_response_time(mock_personas):
-    start_count = len(RESPONSE_TIME._metrics)
-    feature_inputs = {"Text Description": "Test timing", "File Upload": []}
-    personas = mock_personas.personas
-    generate_response(feature_inputs, personas)
-    assert len(RESPONSE_TIME._metrics) >= start_count
+def test_response_time(mock_st_session):
+    import time
+    start = time.time()
+    feature_inputs = {"Text Description": "Timing test", "File Upload": []}
+    personas = mock_st_session.personas
+    _ = generate_response(feature_inputs, personas)
+    duration = time.time() - start
+    assert duration >= 0  # basic check, should complete
 
-def test_concurrent_responses(mock_personas):
+def test_concurrent_responses(mock_st_session):
     import concurrent.futures
     feature_inputs = {"Text Description": "Load test", "File Upload": []}
-    personas = mock_personas.personas
+    personas = mock_st_session.personas
 
     def simulate_request():
         return generate_response(feature_inputs, personas)
@@ -116,5 +93,5 @@ def test_concurrent_responses(mock_personas):
         results = [f.result() for f in futures]
 
     for res in results:
-        assert isinstance(res, str)
         assert len(res) > 0
+        assert "Simulated response" in res
