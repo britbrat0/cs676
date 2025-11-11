@@ -1,4 +1,4 @@
-# Persona Feedback Simulator – Integration & Deployment Documentation
+# Persona Feedback Simulator – Integration & Deployment
 
 ## Table of Contents
 1. [Overview](#overview)  
