@@ -1,0 +1,27 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+      - "8000:8000"   # prometheus metrics
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/personas
+      - PROMETHEUS_METRICS_PORT=8000
+      - AUTH_USERS_JSON=${AUTH_USERS_JSON:-[]}
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: personas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
