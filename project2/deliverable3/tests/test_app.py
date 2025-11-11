@@ -2,13 +2,40 @@ import os
 import json
 import time
 import pytest
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from app import get_persona_by_id, backup_personas, restore_backup, generate_response
 
 # ----------------------------
 # Configuration for tests
 # ----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PERSONA_PATH = os.path.join(BASE_DIR, "../personas.json")
+BACKUP_PATH = os.path.join(BASE_DIR, "../personas_backup.json")
+
+# Sample test personas
+TEST_PERSONAS = [
+    {
+        "id": 1,
+        "name": "Test Persona 1",
+        "occupation": "Engineer",
+        "location": "NY",
+        "tech_proficiency": "High",
+        "behavioral_traits": ["curious", "analytical"]
+    },
+    {
+        "id": 2,
+        "name": "Test Persona 2",
+        "occupation": "Designer",
+        "location": "SF",
+        "tech_proficiency": "Medium",
+        "behavioral_traits": ["creative", "critical"]
+    }
+]
+# ----------------------------
+# Configuration for tests
+# ----------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKUP_PATH = os.path.join(BASE_DIR, "../personas_backup.json")
 
 # Sample test personas
