@@ -242,7 +242,7 @@ scrape_configs:
 
 ---
 
-### ✅ Notes for Developers
+### Notes for Developers
 - Always maintain a **clean `personas.json`** in version control for initial deployments.
 - Use the **backup/restore helpers** to prevent accidental persona data loss.
 - Keep **metrics endpoints open** only for internal monitoring (don’t expose publicly without authentication).
