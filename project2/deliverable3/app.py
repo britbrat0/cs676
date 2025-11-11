@@ -7,14 +7,46 @@ import altair as alt
 import threading
 import time
 import os
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, CollectorRegistry, start_http_server
 
 
 # ===========================
-# Metrics (Prometheus)
+# Metrics (Prometheus) - Safe for Streamlit
 # ===========================
-REQUEST_COUNTER = Counter("app_requests_total", "Total app requests", ["endpoint", "status"])
-RESPONSE_TIME = Histogram("app_response_time_seconds", "Response time per endpoint", ["endpoint"])
+import time
+import threading
+import streamlit as st
+from prometheus_client import Counter, Histogram, CollectorRegistry, start_http_server
+
+# Create a custom Prometheus registry to avoid duplicate metric registration
+PROM_REGISTRY = CollectorRegistry()
+
+# Define metrics with custom registry
+REQUEST_COUNTER = Counter(
+    "app_requests_total",
+    "Total app requests",
+    ["endpoint", "status"],
+    registry=PROM_REGISTRY
+)
+
+RESPONSE_TIME = Histogram(
+    "app_response_time_seconds",
+    "Response time per endpoint",
+    ["endpoint"],
+    registry=PROM_REGISTRY
+)
+
+@st.cache_resource
+def start_metrics_server():
+    """Start the Prometheus metrics server once (Streamlit reload-safe)."""
+    def _run():
+        start_http_server(8000, registry=PROM_REGISTRY)
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    return True
+
+# Start metrics server only once
+start_metrics_server()
 
 def instrumented(endpoint):
     """Decorator to instrument function execution time and errors."""
@@ -33,12 +65,6 @@ def instrumented(endpoint):
         return wrapper
     return decorator
 
-# Start Prometheus metrics server on port 8000
-def start_metrics_server():
-    start_http_server(8000)
-
-metrics_thread = threading.Thread(target=start_metrics_server, daemon=True)
-metrics_thread.start()
 
 # ===========================
 # Simple Health HTTP server
