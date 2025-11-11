@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # -----------------------------
 # Fake generate_response
@@ -8,24 +8,26 @@ def fake_generate_response(feature_inputs, personas):
     return "Simulated response from Test Persona"
 
 # -----------------------------
-# Fixtures
+# Fixture to mock session_state
 # -----------------------------
 @pytest.fixture
 def session_state(monkeypatch):
-    import streamlit as st
-    st.session_state.personas = [{"id": 1, "name": "Test Persona"}]
-    yield st.session_state
-    st.session_state.personas = []
+    mock_state = MagicMock()
+    mock_state.personas = [{"id": 1, "name": "Test Persona"}]
+    monkeypatch.setattr("streamlit.session_state", mock_state)
+    return mock_state
 
 # -----------------------------
-# Tests
+# Patch generate_response globally
 # -----------------------------
 @pytest.fixture(autouse=True)
 def patch_generate(monkeypatch):
-    # Patch generate_response in the app module
     import app
     monkeypatch.setattr(app, "generate_response", fake_generate_response)
 
+# -----------------------------
+# TESTS
+# -----------------------------
 def test_get_persona_by_id(session_state):
     from app import get_persona_by_id
     persona = get_persona_by_id(1)
