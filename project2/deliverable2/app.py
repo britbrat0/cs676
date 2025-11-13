@@ -6,7 +6,14 @@ import pandas as pd
 import altair as alt
 
 from config import MODEL_CHOICES, DEFAULT_MODEL, PERSONA_COLORS, OPENAI_DEFAULTS, REPORT_DEFAULTS, DEFAULT_PERSONA_PATH
-from utils import get_personas
+from utils import (
+    get_personas,
+    validate_persona,
+    save_personas,
+    get_color_for_persona,
+    format_response_line,
+    detect_insight_or_concern
+)
 
 # -------------------------
 # Page Config
