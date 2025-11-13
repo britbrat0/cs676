@@ -253,6 +253,8 @@ if st.session_state.conversation_history.strip():
             st.markdown(format_response_line(line, persona["name"], hl), unsafe_allow_html=True)
         else:
             st.markdown(line)
+    st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
+
 else:
     st.info("No conversation yet.")
 
