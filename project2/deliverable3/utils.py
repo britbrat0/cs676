@@ -129,3 +129,20 @@ def detect_insight_or_concern(text):
     if re.search(r'\b(worry|concern|problem|issue|hard|frustrated)\b', t):
         return "concern"
     return None
+
+
+# -------------------------
+# Persona Sentiment Heatmap
+# -------------------------
+def score_sentiment(text):
+    """
+    Simple scoring: insight=1, concern=-1, neutral=0
+    """
+    t = detect_insight_or_concern(text)
+    if t == "insight":
+        return 1
+    elif t == "concern":
+        return -1
+    else:
+        return 0
+
