@@ -253,8 +253,42 @@ if st.session_state.conversation_history.strip():
             st.markdown(format_response_line(line, persona["name"], hl), unsafe_allow_html=True)
         else:
             st.markdown(line)
+    st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
+
 else:
     st.info("No conversation yet.")
+
+import pandas as pd
+import altair as alt
+
+# --- Prepare Sentiment Heatmap ---
+if st.session_state.conversation_history.strip() and selected_personas:
+    lines = st.session_state.conversation_history.split("\n")
+    data = []
+
+    for idx, line in enumerate(lines):
+        for p in selected_personas:
+            if line.startswith(p["name"]):
+                sentiment = score_sentiment(line)
+                data.append({
+                    "Persona": p["name"],
+                    "Turn": idx+1,
+                    "Sentiment": sentiment
+                })
+
+    if data:
+        df_heat = pd.DataFrame(data)
+        st.subheader("🔥 Persona Sentiment Heatmap")
+        heatmap = alt.Chart(df_heat).mark_rect().encode(
+            x=alt.X('Turn:O', title="Conversation Turn"),
+            y=alt.Y('Persona:N', title="Persona"),
+            color=alt.Color('Sentiment:Q', scale=alt.Scale(domain=[-1,0,1],
+                                                          range=["#f8d7da","#f0f0f0","#d4edda"]),
+                            title="Sentiment"),
+            tooltip=['Persona','Turn','Sentiment']
+        ).properties(width=700, height=50*len(selected_personas))
+        st.altair_chart(heatmap, use_container_width=True)
+
 
 # --- Sidebar Persona Management
 st.sidebar.markdown("---")
