@@ -1,73 +1,91 @@
 import json
-import os
 import streamlit as st
+from config import DEFAULT_PERSONA_PATH
 
 # -------------------------
-# Default persona file path
+# Load Personas
 # -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_PERSONA_PATH = os.path.join(BASE_DIR, "personas.json")
-
-
-def load_personas_from_file(file_path=DEFAULT_PERSONA_PATH):
+def load_personas_from_file(path=DEFAULT_PERSONA_PATH):
     """
     Load personas from a JSON file.
-    Returns a list of personas, empty list if file not found or invalid.
+    Returns a list of persona dicts or empty list if file not found or invalid.
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, list):
-                return data
-            else:
-                st.warning("⚠️ personas.json is not a list. Returning empty list.")
+            if not isinstance(data, list):
+                st.warning(f"⚠️ {path} is not a list. Returning empty personas.")
                 return []
+            return data
     except FileNotFoundError:
-        st.warning(f"⚠️ {file_path} not found. Returning empty list.")
+        st.warning(f"⚠️ {path} not found. Returning empty personas.")
         return []
     except json.JSONDecodeError as e:
-        st.error(f"❌ personas.json is malformed: {e}")
+        st.error(f"❌ Malformed JSON in {path}: {e}")
         return []
     except Exception as e:
-        st.error(f"❌ Unexpected error loading personas: {e}")
+        st.error(f"❌ Unexpected error loading {path}: {e}")
         return []
 
-
-def load_personas_from_upload(uploaded_file):
-    """
-    Load personas from an uploaded file (Streamlit file uploader).
-    Returns a list of personas, empty list if invalid.
-    """
-    if uploaded_file is None:
-        return []
-
-    try:
-        data = json.load(uploaded_file)
-        if isinstance(data, list):
-            return data
-        else:
-            st.error("Uploaded JSON must be a list of personas.")
-            return []
-    except json.JSONDecodeError:
-        st.error("Uploaded file contains invalid JSON.")
-        return []
-    except Exception as e:
-        st.error(f"Error reading uploaded file: {e}")
-        return []
-
-
+# -------------------------
+# Upload & Merge Personas
+# -------------------------
 def get_personas(uploaded_file=None):
     """
-    Unified function to get personas.
-    Priority:
-    1. Uploaded JSON file
-    2. personas.json in repo
-    Returns a list of persona dicts.
+    Returns a list of personas, optionally loading from an uploaded JSON file.
+    If a file is uploaded, it replaces the default personas.
     """
+    personas = load_personas_from_file()
+    
     if uploaded_file:
-        personas = load_personas_from_upload(uploaded_file)
-        if personas:
-            return personas
+        try:
+            imported = json.load(uploaded_file)
+            if not isinstance(imported, list):
+                st.error("Uploaded file must be a JSON list.")
+            else:
+                personas = imported
+                # Save back to default file
+                try:
+                    with open(DEFAULT_PERSONA_PATH, "w", encoding="utf-8") as f:
+                        json.dump(personas, f, indent=2)
+                    st.success("✅ Personas imported and saved successfully!")
+                except Exception as e:
+                    st.error(f"❌ Could not save uploaded personas: {e}")
+        except json.JSONDecodeError:
+            st.error("❌ Uploaded file contains invalid JSON.")
+        except Exception as e:
+            st.error(f"❌ Error reading uploaded file: {e}")
 
-    # fallback to default file
-    return load_personas_from_file()
+    return personas
+
+# -------------------------
+# Persona Validation
+# -------------------------
+def validate_persona(persona):
+    """
+    Checks that required fields exist in a persona dict.
+    Returns True if valid, False otherwise.
+    """
+    required_fields = ["name", "occupation", "tech_proficiency", "behavioral_traits"]
+    for field in required_fields:
+        if field not in persona or not persona[field]:
+            return False
+    # Ensure behavioral_traits is a list
+    if not isinstance(persona.get("behavioral_traits", []), list):
+        return False
+    return True
+
+# -------------------------
+# Save Personas
+# -------------------------
+def save_personas(personas, path=DEFAULT_PERSONA_PATH):
+    """
+    Save a list of personas to a JSON file.
+    """
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(personas, f, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"❌ Could not save personas: {e}")
+        return False
