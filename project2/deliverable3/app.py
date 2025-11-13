@@ -257,36 +257,34 @@ if clear_btn:
     st.session_state.conversation_history = ""
     st.rerun()
 
-# --- Conversation Display with Live Sentiment Heatmap
+# --- Conversation Display + Live Persona Sentiment Heatmap ---
 st.header("💬 Conversation History")
-if st.session_state.conversation_history.strip():
+
+if st.session_state.conversation_history.strip() and selected_personas:
     conversation_container = st.container()
     
+    # --- Display conversation lines with highlighting ---
     with conversation_container:
         lines = st.session_state.conversation_history.split("\n")
         for line in lines:
-            # Check if line belongs to a persona
             matched = False
             for p in selected_personas:
                 if line.startswith(p["name"]):
-                    highlight = detect_insight_or_concern(line)
+                    response_text = extract_persona_response(line)
+                    highlight = detect_insight_or_concern(response_text)
                     st.markdown(format_response_line(line, p["name"], highlight), unsafe_allow_html=True)
                     matched = True
                     break
-            # If not matched, treat as user question or neutral text
             if not matched:
                 if line.startswith("**User:**") or line.startswith("User:"):
                     st.markdown(f"**{line}**")
                 else:
                     st.markdown(line)
-    
+
     st.info("💡 Continue the discussion using the **question field above** to ask another question.")
 
-    # --- Live Persona Sentiment Heatmap ---
-    # --- Live Persona Sentiment Heatmap ---
-if st.session_state.conversation_history.strip() and selected_personas:
+    # --- Build sentiment data for heatmap ---
     sentiment_data = []
-
     for line in st.session_state.conversation_history.split("\n"):
         for p in selected_personas:
             if line.startswith(p["name"]):
@@ -297,8 +295,10 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
     if sentiment_data:
         df_sentiment = pd.DataFrame(sentiment_data)
-        # Ensure every persona appears even if score=0
-        df_summary = df_sentiment.groupby("Persona")["Sentiment"].mean().reset_index()
+        # Aggregate average sentiment per persona
+        df_summary = df_sentiment.groupby("Persona")["Sentiment"].mean().reindex(
+            [p["name"] for p in selected_personas], fill_value=0
+        ).reset_index()
 
         st.markdown("## 🔥 Persona Sentiment Heatmap")
         heatmap_chart = alt.Chart(df_summary).mark_bar().encode(
@@ -313,11 +313,11 @@ if st.session_state.conversation_history.strip() and selected_personas:
         ).properties(height=200)
 
         st.altair_chart(heatmap_chart, use_container_width=True)
-
     else:
         st.info("No sentiment data yet for the heatmap.")
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
 
 
 
