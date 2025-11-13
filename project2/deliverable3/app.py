@@ -258,36 +258,40 @@ if st.session_state.conversation_history.strip():
 else:
     st.info("No conversation yet.")
 
-import pandas as pd
+# --- Persona Sentiment Heatmap
 import altair as alt
+import pandas as pd
 
-# --- Prepare Sentiment Heatmap ---
 if st.session_state.conversation_history.strip() and selected_personas:
-    lines = st.session_state.conversation_history.split("\n")
-    data = []
+    sentiment_data = []
 
-    for idx, line in enumerate(lines):
+    lines = st.session_state.conversation_history.split("\n")
+    for line in lines:
         for p in selected_personas:
             if line.startswith(p["name"]):
-                sentiment = score_sentiment(line)
-                data.append({
-                    "Persona": p["name"],
-                    "Turn": idx+1,
-                    "Sentiment": sentiment
-                })
+                sentiment = detect_insight_or_concern(line)
+                score = 1 if sentiment == "insight" else -1 if sentiment == "concern" else 0
+                sentiment_data.append({"Persona": p["name"], "Line": line, "Sentiment": score})
 
-    if data:
-        df_heat = pd.DataFrame(data)
-        st.subheader("🔥 Persona Sentiment Heatmap")
-        heatmap = alt.Chart(df_heat).mark_rect().encode(
-            x=alt.X('Turn:O', title="Conversation Turn"),
-            y=alt.Y('Persona:N', title="Persona"),
-            color=alt.Color('Sentiment:Q', scale=alt.Scale(domain=[-1,0,1],
-                                                          range=["#f8d7da","#f0f0f0","#d4edda"]),
-                            title="Sentiment"),
-            tooltip=['Persona','Turn','Sentiment']
-        ).properties(width=700, height=50*len(selected_personas))
-        st.altair_chart(heatmap, use_container_width=True)
+    if sentiment_data:
+        df_sentiment = pd.DataFrame(sentiment_data)
+        # Aggregate average sentiment per persona
+        df_summary = df_sentiment.groupby("Persona")["Sentiment"].mean().reset_index()
+
+        st.markdown("## 🔥 Persona Sentiment Heatmap")
+        heatmap_chart = alt.Chart(df_summary).mark_bar().encode(
+            x=alt.X("Persona", sort="-y"),
+            y=alt.Y("Sentiment", title="Average Sentiment Score"),
+            color=alt.Color(
+                "Sentiment",
+                scale=alt.Scale(domain=[-1,0,1], range=["#F94144","#FFC300","#3CB44B"]),
+                legend=None
+            ),
+            tooltip=["Persona", "Sentiment"]
+        ).properties(height=200)
+
+        st.altair_chart(heatmap_chart, use_container_width=True)
+
 
 
 # --- Sidebar Persona Management
