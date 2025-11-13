@@ -1,10 +1,14 @@
 import streamlit as st
 import openai
 import json
+import re
+import pandas as pd
+import altair as alt
 
-from config import MODEL_CHOICES, DEFAULT_MODEL, OPENAI_DEFAULTS, REPORT_DEFAULTS, DEFAULT_PERSONA_PATH
+from config import MODEL_CHOICES, DEFAULT_MODEL, PERSONA_COLORS, OPENAI_DEFAULTS, REPORT_DEFAULTS, DEFAULT_PERSONA_PATH
 from utils import (
     get_personas,
+    validate_persona,
     save_personas,
     get_color_for_persona,
     format_response_line,
@@ -34,6 +38,7 @@ api_key_input = st.sidebar.text_input(
     value=st.session_state.api_key,
     help="Your API key is not stored permanently"
 )
+
 if api_key_input:
     st.session_state.api_key = api_key_input
     openai.api_key = api_key_input
@@ -41,11 +46,7 @@ if api_key_input:
 else:
     st.sidebar.warning("⚠️ Enter your OpenAI API key to proceed")
 
-model_choice = st.sidebar.selectbox(
-    "Select Model",
-    MODEL_CHOICES,
-    index=MODEL_CHOICES.index(DEFAULT_MODEL)
-)
+model_choice = st.sidebar.selectbox("Select Model", MODEL_CHOICES, index=MODEL_CHOICES.index(DEFAULT_MODEL))
 
 # -------------------------
 # Personas
@@ -58,6 +59,31 @@ if not personas:
     st.sidebar.error("⚠️ No personas loaded. Add personas.json or upload a file.")
 else:
     st.sidebar.success(f"Loaded {len(personas)} personas.")
+
+# -------------------------
+# Persona Colors Helpers
+# -------------------------
+def get_color_for_persona(name):
+    if name not in PERSONA_COLORS:
+        PERSONA_COLORS[name] = f"#{(hash(name) & 0xFFFFFF):06x}"
+    return PERSONA_COLORS[name]
+
+def format_response_line(text, name, highlight=None):
+    color = get_color_for_persona(name)
+    bg = ""
+    if highlight == "insight":
+        bg = "background-color: #d4edda;"
+    elif highlight == "concern":
+        bg = "background-color: #f8d7da;"
+    return f"<div style='color:{color}; {bg} padding:6px; margin:4px 0; border-left:4px solid {color}; border-radius:4px;'>{text}</div>"
+
+def detect_insight_or_concern(text):
+    t = text.lower()
+    if re.search(r'\b(think|improve|great|helpful|excellent|love)\b', t):
+        return "insight"
+    if re.search(r'\b(worry|concern|problem|issue|hard|frustrated)\b', t):
+        return "concern"
+    return None
 
 # -------------------------
 # Prompt Builder
@@ -162,11 +188,7 @@ tabs = st.tabs(["Text Description", "File Upload"])
 with tabs[0]:
     text_desc = st.text_area("Describe your feature", height=150)
 with tabs[1]:
-    uploaded_files = st.file_uploader(
-        "Upload wireframes/mockups",
-        type=["png","jpg","jpeg","pdf"],
-        accept_multiple_files=True
-    )
+    uploaded_files = st.file_uploader("Upload wireframes/mockups", type=["png","jpg","jpeg","pdf"], accept_multiple_files=True)
 
 feature_inputs = {
     "Text": text_desc,
@@ -257,7 +279,8 @@ with st.sidebar.form("new_persona_form"):
                 "behavioral_traits": [t.strip() for t in traits.split(",") if t.strip()]
             }
             personas.append(new_p)
-            save_personas(personas)
+            with open(DEFAULT_PERSONA_PATH, "w", encoding="utf-8") as f:
+                json.dump(personas, f, indent=2)
             st.sidebar.success("Added!")
             st.rerun()
 
