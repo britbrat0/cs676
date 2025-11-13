@@ -9,10 +9,6 @@ from config import DEFAULT_PERSONA_PATH, PERSONA_COLORS
 # Persona Helpers
 # -------------------------
 def get_personas(uploaded_file=None):
-    """
-    Load personas from uploaded file or default JSON.
-    Returns a list of personas (dicts).
-    """
     try:
         if uploaded_file:
             personas = json.load(uploaded_file)
@@ -21,7 +17,6 @@ def get_personas(uploaded_file=None):
                 personas = json.load(f)
         else:
             personas = []
-        # Validate minimal persona keys
         personas = [p for p in personas if validate_persona(p)]
         return personas
     except Exception as e:
@@ -29,16 +24,10 @@ def get_personas(uploaded_file=None):
         return []
 
 def validate_persona(persona):
-    """
-    Ensure the persona dict has required keys.
-    """
     required_keys = ["id", "name", "occupation", "tech_proficiency"]
     return all(k in persona for k in required_keys)
 
 def save_personas(personas, path=DEFAULT_PERSONA_PATH):
-    """
-    Save personas to JSON file.
-    """
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(personas, f, indent=2)
