@@ -48,23 +48,28 @@ model_choice = st.sidebar.selectbox(
 )
 
 # -------------------------
-# Load Personas
+# Load Personas (robust)
 # -------------------------
+persona_data = []
 try:
     with open("personas.json", "r", encoding="utf-8") as f:
-        persona_data = json.load(f)
-    if "personas" not in st.session_state or not st.session_state.personas:
-        st.session_state.personas = persona_data
+        try:
+            persona_data = json.load(f)
+            if not isinstance(persona_data, list):
+                st.warning("personas.json content is not a list — starting with empty persona list.")
+                persona_data = []
+        except json.JSONDecodeError:
+            st.error("personas.json is malformed. Starting with empty persona list.")
+            persona_data = []
 except FileNotFoundError:
+    # safe fallback: file missing
     st.warning("personas.json not found. Starting with empty persona list.")
     persona_data = []
-    st.session_state.personas = []
 
-def get_persona_by_id(pid):
-    for p in st.session_state.personas:
-        if p["id"] == pid:
-            return p
-    return None
+# Ensure session state has a list assigned (always)
+if "personas" not in st.session_state or not isinstance(st.session_state.personas, list):
+    st.session_state.personas = persona_data if persona_data else []
+
 
 # -------------------------
 # Persona Colors
@@ -280,8 +285,13 @@ feature_inputs = {
 
 st.markdown("---")
 
+# -------------------------
 # Persona Selection
+# -------------------------
 st.header("👥 Select Personas")
+
+# Always initialize selected_personas to a safe empty list
+selected_personas = []
 
 if not st.session_state.personas:
     st.warning("No personas available. Create personas in the sidebar.")
@@ -289,22 +299,28 @@ else:
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
+        persona_options = [f"{p.get('name','Unknown')} ({p.get('occupation','Unknown')})" for p in st.session_state.personas]
+        # default selection logic — choose up to first 3
+        default_selection = persona_options[:3] if len(persona_options) >= 3 else persona_options
         selected_personas_str = st.multiselect(
             "Choose personas to participate in the discussion",
             persona_options,
-            default=persona_options[:3] if len(persona_options) >= 3 else persona_options
+            default=default_selection
         )
+        # build selected_personas list from selection
         selected_personas = [
             p for p in st.session_state.personas 
-            if f"{p['name']} ({p['occupation']})" in selected_personas_str
+            if f"{p.get('name','Unknown')} ({p.get('occupation','Unknown')})" in selected_personas_str
         ]
     
     with col2:
         st.metric("Selected", len(selected_personas))
         if st.button("Select All"):
-            selected_personas_str = persona_options
-            st.rerun()
+            # set all options as selected and rerun
+            # note: we cannot directly set multiselect value programmatically here, but we can trigger a rerun
+            # using session_state to remember a 'select_all' flag is optional; simple rerun for UX
+            st.session_state._select_all = True
+            st.experimental_rerun()
 
 # Display selected personas
 if selected_personas:
