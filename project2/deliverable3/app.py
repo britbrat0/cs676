@@ -4,110 +4,24 @@ import json
 import re
 import pandas as pd
 import altair as alt
-import threading
-import time
 import os
-from prometheus_client import Counter, Histogram, CollectorRegistry, start_http_server
-
-
-# ===========================
-# Metrics (Prometheus) - Safe for Streamlit
-# ===========================
-import time
-import threading
-import streamlit as st
-from prometheus_client import Counter, Histogram, CollectorRegistry, start_http_server
-
-# Create a custom Prometheus registry to avoid duplicate metric registration
-PROM_REGISTRY = CollectorRegistry()
-
-# Define metrics with custom registry
-REQUEST_COUNTER = Counter(
-    "app_requests_total",
-    "Total app requests",
-    ["endpoint", "status"],
-    registry=PROM_REGISTRY
-)
-
-RESPONSE_TIME = Histogram(
-    "app_response_time_seconds",
-    "Response time per endpoint",
-    ["endpoint"],
-    registry=PROM_REGISTRY
-)
-
-@st.cache_resource
-def start_metrics_server():
-    """Start the Prometheus metrics server once (Streamlit reload-safe)."""
-    def _run():
-        start_http_server(8000, registry=PROM_REGISTRY)
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
-    return True
-
-# Start metrics server only once
-start_metrics_server()
-
-def instrumented(endpoint):
-    """Decorator to instrument function execution time and errors."""
-    def decorator(fn):
-        def wrapper(*args, **kwargs):
-            start = time.time()
-            try:
-                result = fn(*args, **kwargs)
-                REQUEST_COUNTER.labels(endpoint=endpoint, status="success").inc()
-                return result
-            except Exception:
-                REQUEST_COUNTER.labels(endpoint=endpoint, status="error").inc()
-                raise
-            finally:
-                RESPONSE_TIME.labels(endpoint=endpoint).observe(time.time() - start)
-        return wrapper
-    return decorator
-
-
-# ===========================
-# Simple Health HTTP server
-# ===========================
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/healthz":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"OK")
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-def start_health_server():
-    port = int(os.environ.get("HEALTH_PORT", "8080"))
-    server = HTTPServer(("", port), HealthHandler)
-    server.serve_forever()
-
-health_thread = threading.Thread(target=start_health_server, daemon=True)
-health_thread.start()
-
 
 # -------------------------
-# Page Config
+# App Config
 # -------------------------
 st.set_page_config(page_title="Persona Feedback Simulator", page_icon="💬", layout="wide")
 
 # -------------------------
-# Session State Initialization
+# Session State
 # -------------------------
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = ""
-if "personas" not in st.session_state:
-    st.session_state.personas = []
+
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
 
 # -------------------------
-# Sidebar - API Key Input
+# Sidebar – API Key
 # -------------------------
 st.sidebar.header("🔑 API Configuration")
 api_key_input = st.sidebar.text_input(
@@ -124,274 +38,141 @@ if api_key_input:
 else:
     st.sidebar.warning("⚠️ Please enter your OpenAI API key to use the app")
 
-# Model selection
 model_choice = st.sidebar.selectbox(
     "Select Model",
     ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
-    index=0,
-    help="gpt-4o-mini is faster and cheaper, gpt-4o is more capable"
+    index=0
 )
 
+# -------------------------
+# Personas (clean unified flow)
+# -------------------------
+from utils import get_personas
+
+st.sidebar.markdown("---")
+st.sidebar.header("👥 Personas")
+
+uploaded_persona_file = st.sidebar.file_uploader("Upload personas.json", type=["json"])
+personas = get_personas(uploaded_persona_file)
+
+if not personas:
+    st.sidebar.error("⚠️ No personas found. Add personas.json to the repo or upload a file.")
+else:
+    st.sidebar.success(f"Loaded {len(personas)} personas.")
 
 # -------------------------
-# Load Personas (Path-Safe with Backup & Recovery)
+# Persona Visualization Colors
 # -------------------------
+PERSONA_COLORS = {}
 
-# Get the directory of the current app.py file
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PERSONA_PATH = os.path.join(BASE_DIR, "personas.json")
-BACKUP_FILE = os.path.join(BASE_DIR, "personas_backup.json")
+def get_color_for_persona(name):
+    if name not in PERSONA_COLORS:
+        PERSONA_COLORS[name] = f"#{(hash(name) & 0xFFFFFF):06x}"
+    return PERSONA_COLORS[name]
 
-# -------------------------
-# Backup & Recovery Helpers
-# -------------------------
-def backup_personas():
-    """Save current personas to a local backup file."""
-    try:
-        with open(BACKUP_FILE, "w", encoding="utf-8") as f:
-            json.dump(st.session_state.personas, f, indent=2)
-        st.info("💾 Personas saved to backup.")
-    except Exception as e:
-        st.error(f"⚠️ Failed to write backup: {e}")
-
-def restore_backup():
-    """Restore personas from backup if primary file missing or corrupted."""
-    if os.path.exists(BACKUP_FILE):
-        try:
-            with open(BACKUP_FILE, "r", encoding="utf-8") as f:
-                backup_data = json.load(f)
-            st.session_state.personas = backup_data
-            st.success("✅ Personas restored from backup.")
-        except Exception as e:
-            st.error(f"⚠️ Backup restore failed: {e}")
-    else:
-        st.warning("⚠️ No backup file found. Starting with an empty persona list.")
-        st.session_state.personas = []
-
-# -------------------------
-# Load Personas
-# -------------------------
-try:
-    # Load personas relative to the script location
-    with open(PERSONA_PATH, "r", encoding="utf-8") as f:
-        persona_data = json.load(f)
-
-    # Initialize in session_state if not already loaded
-    if "personas" not in st.session_state or not st.session_state.personas:
-        st.session_state.personas = persona_data
-
-except FileNotFoundError:
-    st.warning(f"⚠️ personas.json not found at {PERSONA_PATH}. Trying backup...")
-    restore_backup()
-except json.JSONDecodeError:
-    st.error("⚠️ personas.json is corrupted. Attempting to restore from backup...")
-    restore_backup()
-
-# -------------------------
-# Utility: Get Persona by ID
-# -------------------------
-def get_persona_by_id(pid):
-    """Fetch a persona by ID."""
-    for p in st.session_state.personas:
-        if p.get("id") == pid:
-            return p
-    return None
-
-
-# -------------------------
-# Persona Colors
-# -------------------------
-PERSONA_COLORS = {
-    "Sophia Martinez": "#E6194B",
-    "Jamal Robinson": "#3CB44B",
-    "Eleanor Chen": "#FFE119",
-    "Diego Alvarez": "#4363D8",
-    "Anita Patel": "#F58231",
-    "Robert Klein": "#911EB4",
-    "Nia Thompson": "#46F0F0",
-    "Marcus Green": "#F032E6",
-    "Aisha Mbatha": "#BCF60C",
-    "Owen Gallagher": "#FABEBE",
-}
-
-def get_color_for_persona(persona_name):
-    """Get color for persona, generate if not exists"""
-    if persona_name in PERSONA_COLORS:
-        return PERSONA_COLORS[persona_name]
-    # Generate a hash-based color for new personas
-    hash_val = hash(persona_name)
-    color = f"#{(hash_val & 0xFFFFFF):06x}"
-    PERSONA_COLORS[persona_name] = color
-    return color
-
-def format_response_line(text, persona_name, highlight=None):
-    color = get_color_for_persona(persona_name)
-    background = ""
+def format_response_line(text, name, highlight=None):
+    color = get_color_for_persona(name)
+    bg = ""
     if highlight == "insight":
-        background = "background-color: #d4edda;"
+        bg = "background-color: #d4edda;"
     elif highlight == "concern":
-        background = "background-color: #f8d7da;"
-    return f'<div style="color: {color}; {background} padding: 8px; margin: 4px 0; border-left: 4px solid {color}; border-radius: 4px; white-space: pre-wrap;">{text}</div>'
+        bg = "background-color: #f8d7da;"
+    return f"<div style='color:{color}; {bg} padding:6px; margin:4px 0; border-left:4px solid {color}; border-radius:4px;'>{text}</div>"
 
 def detect_insight_or_concern(text):
-    lower_text = text.lower()
-    if re.search(r'\b(think|like|improve|great|benefit|love|helpful|excellent|wonderful)\b', lower_text):
+    t = text.lower()
+    if re.search(r'\b(think|improve|great|helpful|excellent|love)\b', t):
         return "insight"
-    if re.search(r'\b(worry|concern|unsure|problem|difficult|issue|hard|confused|frustrated)\b', lower_text):
+    if re.search(r'\b(worry|concern|problem|issue|hard|frustrated)\b', t):
         return "concern"
     return None
 
 # -------------------------
-# Build GPT Prompt
+# Prompt Construction
 # -------------------------
-def build_prompt(personas, feature_inputs, conversation_history=None):
-    persona_descriptions = "\n".join([
-        f"- {p['name']} ({p['occupation']}, {p['location']}, Tech: {p['tech_proficiency']}, Traits: {', '.join(p['behavioral_traits'])})"
+def build_prompt(personas, feature_inputs, conversation_history):
+    persona_block = "\n".join(
+        f"- {p['name']} ({p['occupation']}, {p.get('location','')}, Tech: {p['tech_proficiency']})"
         for p in personas
-    ])
-    
-    feature_description = ""
-    for key, value in feature_inputs.items():
-        if isinstance(value, list):
-            value_text = ", ".join(value) if value else "None"
-        else:
-            value_text = value.strip() if value else "None"
-        feature_description += f"{key}:\n{value_text}\n\n"
+    )
+
+    feature_block = ""
+    for k, v in feature_inputs.items():
+        vtxt = ", ".join(v) if isinstance(v, list) else v
+        feature_block += f"{k}:\n{vtxt}\n\n"
 
     prompt = f"""
 Personas:
-{persona_descriptions}
+{persona_block}
 
-Feature Inputs:
-{feature_description}
+Features:
+{feature_block}
 
-Simulate a realistic conversation between these personas about this feature.
-- Each persona should speak in turn, but keep responses concise (2-3 sentences each).
-- Use the following template for each persona's response:
+Simulate a realistic persona conversation:
+- Each persona speaks in 2–3 sentences.
+- Format:
 
 [Persona Name]:
-- Response: <what they say>
-- Reasoning: <why they think that>
-- Confidence: <High / Medium / Low>
-- Suggested follow-up: <next question they might ask>
+- Response:
+- Reasoning:
+- Confidence:
+- Suggested follow-up:
 
-Keep the conversation natural and engaging. Each persona should provide unique perspectives based on their background.
 """
     if conversation_history:
-        prompt += "\n\nPrevious conversation:\n" + conversation_history
-        prompt += "\n\nContinue the conversation naturally based on the above context."
+        prompt += f"\nPrevious conversation:\n{conversation_history}\nContinue naturally."
+
     return prompt.strip()
 
 # -------------------------
-# Generate GPT Response
+# GPT Response
 # -------------------------
-def generate_response(feature_inputs, personas, conversation_history=None, model="gpt-4o-mini"):
-    """
-    Generates persona-based feedback using the OpenAI API.
-    If no API key or model call fails, returns a simulated mock response.
-    """
-    import os
-    import json
-    import random
+def generate_response(feature_inputs, personas, history, model):
+    if not st.session_state.api_key:
+        st.error("API key missing.")
+        return ""
 
     try:
-        import openai
-        api_key = os.getenv("OPENAI_API_KEY")
-
-        # If API key missing, fallback to mock
-        if not api_key:
-            raise ValueError("Missing API key")
-
-        client = openai.OpenAI(api_key=api_key)
-        text_input = feature_inputs.get("Text Description", "")
-        file_info = feature_inputs.get("File Upload", [])
-
-        # Construct persona context
-        persona_context = "\n".join([f"{p['name']}: {p['description']}" for p in personas])
-
-        prompt = f"""
-        Personas:
-        {persona_context}
-
-        Feature Description:
-        {text_input}
-
-        Generate feedback from each persona.
-        """
-
-        response = client.chat.completions.create(
+        prompt = build_prompt(personas, feature_inputs, history)
+        response = openai.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300
+            messages=[
+                {"role": "system", "content": "You simulate multi-persona UX research feedback."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2000,
+            temperature=0.8
         )
-
-        result = response.choices[0].message.content.strip()
-        if not result:
-            raise ValueError("Empty API response")
-
-        return result
-
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        # ✅ Safe fallback mock for testing
-        print(f"[DEBUG] Using mock response: {e}")
-        text_input = feature_inputs.get("Text Description", "(no description)")
-        mock = "\n".join([
-            f"{p['name']}: Feedback on '{text_input[:50]}...' looks promising!"
-            for p in personas
-        ])
-        return mock
-
+        st.error(f"❌ {e}")
+        return ""
 
 # -------------------------
 # Feedback Report
 # -------------------------
-def generate_feedback_report(conversation, model="gpt-4o-mini"):
-    if not st.session_state.api_key:
-        st.error("Please enter your OpenAI API key in the sidebar.")
-        return ""
-    
-    try:
-        prompt = f"""
-Analyze the following conversation and create a structured feedback report:
+def generate_feedback_report(conversation, model):
+    prompt = f"""
+Analyze the conversation and produce a structured UX research report.
 
 Conversation:
 {conversation}
 
-Create a comprehensive report with the following sections:
-
-## Executive Summary
-Brief overview of key findings
-
-## Patterns and Themes
-Identify recurring topics and sentiments
-
-## Consensus Points
-Areas where personas agree
-
-## Disagreements and Concerns
-Areas of divergence and specific concerns raised
-
-## Persona-Specific Insights
-Key takeaways from each persona
-
-## Actionable Recommendations
-Concrete next steps for feature improvements (prioritized)
-
-## Quantitative Metrics
-Estimate:
-- Overall acceptance rate (%)
-- Likelihood of usage by persona segment
-- Priority level (High/Medium/Low)
-
-## Risk Assessment
-Potential blockers or deal-breakers identified
-
-Keep the report concise but actionable.
+Sections:
+- Executive Summary
+- Patterns & Themes
+- Consensus Points
+- Disagreements & Concerns
+- Persona Insights
+- Actionable Recommendations
+- Quantitative Metrics (acceptance %, likelihood per persona, priority)
+- Risk Assessment
 """
+    try:
         response = openai.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are an expert product analyst and UX researcher. Provide actionable, data-driven insights."},
+                {"role": "system", "content": "You are an expert product analyst."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=2500,
@@ -399,328 +180,140 @@ Keep the report concise but actionable.
         )
         return response.choices[0].message.content
     except Exception as e:
-        st.error(f"❌ Error generating report: {str(e)}")
+        st.error(str(e))
         return ""
 
 # -------------------------
-# Main App UI
+# Main UI
 # -------------------------
 st.title("💬 Persona Feedback Simulator")
-st.markdown("*Simulate realistic user feedback from diverse personas for your product features*")
 
-# Check API key before proceeding
 if not st.session_state.api_key:
-    st.info("👈 Please enter your OpenAI API key in the sidebar to get started.")
     st.stop()
 
-st.markdown("---")
-
-# Feature Input Section
+# Feature input
 st.header("📝 Feature Description")
 tabs = st.tabs(["Text Description", "File Upload"])
 
 with tabs[0]:
-    text_desc = st.text_area(
-        "Enter a textual description of your feature",
-        height=150,
-        placeholder="Example: A new dark mode toggle that automatically adjusts based on time of day..."
-    )
+    text_desc = st.text_area("Describe your feature", height=150)
 
 with tabs[1]:
     uploaded_files = st.file_uploader(
-        "Upload wireframes/mockups (optional)",
+        "Upload wireframes/mockups",
         type=["png", "jpg", "jpeg", "pdf"],
-        accept_multiple_files=True,
-        help="File content is not yet processed, only filenames are shared with personas"
+        accept_multiple_files=True
     )
 
 feature_inputs = {
-    "Text Description": text_desc,
+    "Text": text_desc,
     "Files": [f.name for f in uploaded_files] if uploaded_files else []
 }
 
 st.markdown("---")
 
-# Persona Selection
-st.header("👥 Select Personas")
+# Persona selection
+st.header("👥 Choose Personas")
 
-if not st.session_state.personas:
-    st.warning("No personas available. Create personas in the sidebar.")
+if not personas:
+    st.warning("No personas available.")
+    selected_personas = []
 else:
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        persona_options = [f"{p['name']} ({p['occupation']})" for p in st.session_state.personas]
-        selected_personas_str = st.multiselect(
-            "Choose personas to participate in the discussion",
-            persona_options,
-            default=persona_options[:3] if len(persona_options) >= 3 else persona_options
-        )
-        selected_personas = [
-            p for p in st.session_state.personas 
-            if f"{p['name']} ({p['occupation']})" in selected_personas_str
-        ]
-    
-    with col2:
-        st.metric("Selected", len(selected_personas))
-        if st.button("Select All"):
-            selected_personas_str = persona_options
-            st.rerun()
+    option_labels = [f"{p['name']} ({p['occupation']})" for p in personas]
+    default_selection = option_labels[:3]
+    selected_labels = st.multiselect("Select personas:", option_labels, default=default_selection)
 
-# Display selected personas
-if selected_personas:
-    with st.expander("📋 View Selected Persona Details", expanded=False):
-        for p in selected_personas:
-            color = get_color_for_persona(p['name'])
-            st.markdown(
-                f"<div style='border-left: 4px solid {color}; padding: 10px; margin: 5px 0;'>"
-                f"<strong>{p['name']}</strong> - {p['occupation']}<br>"
-                f"<small>📍 {p['location']} | 💻 Tech: {p['tech_proficiency']} | "
-                f"Traits: {', '.join(p['behavioral_traits'])}</small>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+    selected_personas = [
+        p for p in personas
+        if f"{p['name']} ({p['occupation']})" in selected_labels
+    ]
 
-st.markdown("---")
-
-# Interaction Section
+# Ask a question
 st.header("💭 Ask Your Question")
-user_question = st.text_input(
-    "What would you like to ask the personas?",
-    placeholder="Example: What do you think about this feature? Would you use it daily?"
-)
+question = st.text_input("Your question to the personas")
 
-# Action Buttons
-col1, col2, col3 = st.columns([2, 2, 1])
+col1, col2, col3 = st.columns([2,2,1])
+ask_btn = col1.button("🎯 Ask")
+report_btn = col2.button("📊 Generate Report")
+clear_btn = col3.button("🗑️ Clear")
 
-with col1:
-    ask_button = st.button("🎯 Ask Personas", type="primary", use_container_width=True)
-
-with col2:
-    report_button = st.button("📊 Generate Feedback Report", use_container_width=True)
-
-with col3:
-    clear_button = st.button("🗑️ Clear", use_container_width=True)
-
-# Handle Ask Personas
-if ask_button:
+# --- Handle Ask Personas
+if ask_btn:
     if not selected_personas:
-        st.warning("⚠️ Please select at least one persona!")
-    elif not user_question.strip() and not text_desc.strip():
-        st.warning("⚠️ Please enter a question or feature description!")
+        st.warning("Select at least one persona.")
     else:
-        with st.spinner("🤔 Personas are thinking..."):
-            # Add user question to history
-            if user_question.strip():
-                st.session_state.conversation_history += f"\n**User Question:** {user_question}\n\n"
-            
-            # Generate response
-            response = generate_response(
-                feature_inputs,
-                selected_personas,
-                st.session_state.conversation_history,
-                model=model_choice
-            )
-            
-            if response:
-                st.session_state.conversation_history += response + "\n"
-                st.success("✅ Personas have responded!")
+        if question:
+            st.session_state.conversation_history += f"\n**User:** {question}\n"
+        with st.spinner("Thinking..."):
+            resp = generate_response(feature_inputs, selected_personas, st.session_state.conversation_history, model_choice)
+            if resp:
+                st.session_state.conversation_history += resp + "\n"
                 st.rerun()
 
-# Handle Generate Report
-if report_button:
+# --- Handle Report
+if report_btn:
     if not st.session_state.conversation_history.strip():
-        st.warning("⚠️ No conversation history yet. Ask personas some questions first!")
+        st.warning("Nothing to analyze yet.")
     else:
-        with st.spinner("📊 Analyzing conversation and generating report..."):
-            report = generate_feedback_report(st.session_state.conversation_history, model=model_choice)
-            if report:
-                st.markdown("---")
-                st.markdown("## 📊 Feedback Analysis Report")
+        with st.spinner("Generating report..."):
+            report = generate_feedback_report(st.session_state.conversation_history, model_choice)
+            st.markdown("## 📊 Feedback Report")
+            st.markdown(report)
+            st.download_button("Download Report", report, "report.md")
 
-                # --- Extract Quantitative Data ---
-                acceptance_rate = None
-                usage_by_persona = {}
-                priority_level = None
-
-                # Try to extract numeric estimates from the report
-                acceptance_match = re.search(r"acceptance rate[^0-9]*(\d{1,3})%", report, re.IGNORECASE)
-                if acceptance_match:
-                    acceptance_rate = int(acceptance_match.group(1))
-
-                # Try to find priority level
-                priority_match = re.search(r"priority level[^:]*:\s*(High|Medium|Low)", report, re.IGNORECASE)
-                if priority_match:
-                    priority_level = priority_match.group(1).capitalize()
-
-                # Try to extract persona usage likelihoods if listed (e.g., "Sophia Martinez – 80%")
-                for line in report.splitlines():
-                    m = re.match(r"[-*]?\s*([A-Za-z ]+)\s*[-–]\s*(\d{1,3})%", line.strip())
-                    if m:
-                        usage_by_persona[m.group(1).strip()] = int(m.group(2))
-
-                # --- Display Metrics ---
-                metrics_col1, metrics_col2 = st.columns(2)
-                with metrics_col1:
-                    if acceptance_rate is not None:
-                        st.metric("Overall Acceptance Rate", f"{acceptance_rate}%")
-                        st.progress(acceptance_rate / 100)
-                with metrics_col2:
-                    if priority_level:
-                        priority_color = {
-                            "High": "🔴 High",
-                            "Medium": "🟠 Medium",
-                            "Low": "🟢 Low"
-                        }.get(priority_level, priority_level)
-                        st.metric("Priority Level", priority_color)
-
-                # --- Persona Usage Visualization ---
-                if usage_by_persona:
-                    df_usage = pd.DataFrame({
-                        "Persona": list(usage_by_persona.keys()),
-                        "Likelihood of Use (%)": list(usage_by_persona.values())
-                    })
-
-                    chart = (
-                        alt.Chart(df_usage)
-                        .mark_bar(color="#3CB44B")
-                        .encode(
-                            x=alt.X("Likelihood of Use (%)", scale=alt.Scale(domain=[0, 100])),
-                            y=alt.Y("Persona", sort="-x"),
-                            tooltip=["Persona", "Likelihood of Use (%)"]
-                        )
-                        .properties(title="Persona Likelihood of Feature Usage", height=300)
-                    )
-                    st.altair_chart(chart, use_container_width=True)
-
-                st.markdown("---")
-                st.markdown(report)
-
-                # --- Download button ---
-                st.download_button(
-                    label="⬇️ Download Report",
-                    data=report,
-                    file_name="persona_feedback_report.md",
-                    mime="text/markdown"
-                )
-
-# Handle Clear
-if clear_button:
+# --- Handle Clear
+if clear_btn:
     st.session_state.conversation_history = ""
-    st.success("🗑️ Conversation cleared!")
     st.rerun()
 
-st.markdown("---")
-
-# Conversation History Display
+# -------------------------
+# Conversation Display
+# -------------------------
 st.header("💬 Conversation History")
 
 if st.session_state.conversation_history.strip():
-    conversation_container = st.container()
-    
-    with conversation_container:
-        lines = st.session_state.conversation_history.split("\n")
-        
-        for line in lines:
-            if not line.strip():
-                continue
-                
-            # Check if line is from a persona
-            matched = False
-            for p in selected_personas:
-                if line.startswith(p["name"] + ":") or line.startswith(f"[{p['name']}]"):
-                    highlight = detect_insight_or_concern(line)
-                    st.markdown(format_response_line(line, p["name"], highlight), unsafe_allow_html=True)
-                    matched = True
-                    break
-            
-            # If not matched to persona, check if it's a user question or other text
-            if not matched:
-                if line.startswith("**User Question:**") or line.startswith("User:"):
-                    st.markdown(f"**{line}**")
-                elif line.startswith("-") or line.startswith("*"):
-                    st.markdown(f"  {line}")
-                else:
-                    st.markdown(line)
-
-    st.info("💡 Continue the discussion using the **question field above** to ask a follow-up question.")
+    lines = st.session_state.conversation_history.split("\n")
+    for line in lines:
+        if any(line.startswith(p["name"]) for p in selected_personas):
+            persona = next(p for p in selected_personas if line.startswith(p["name"]))
+            hl = detect_insight_or_concern(line)
+            st.markdown(format_response_line(line, persona["name"], hl), unsafe_allow_html=True)
+        else:
+            st.markdown(line)
 else:
-    st.info("💡 No conversation yet. Ask your personas a question to get started!")
+    st.info("No conversation yet.")
 
 # -------------------------
-# Sidebar - Persona Management
+# Sidebar – Persona Management
 # -------------------------
 st.sidebar.markdown("---")
-st.sidebar.header("➕ Create New Persona")
+st.sidebar.header("➕ Create Persona")
 
 with st.sidebar.form("new_persona_form"):
-    new_name = st.text_input("Name*", placeholder="e.g., Alex Johnson")
-    new_occupation = st.text_input("Occupation*", placeholder="e.g., Software Engineer")
-    new_location = st.text_input("Location", placeholder="e.g., Seattle, WA")
-    new_tech = st.selectbox("Tech Proficiency*", ["Low", "Medium", "High"], index=1)
-    new_traits = st.text_area(
-        "Behavioral Traits (comma-separated)",
-        placeholder="e.g., detail-oriented, skeptical, early adopter"
-    )
-    
-    submit_persona = st.form_submit_button("Add Persona", use_container_width=True)
-    
-    if submit_persona:
-        if not new_name.strip():
-            st.error("❌ Name is required!")
-        elif not new_occupation.strip():
-            st.error("❌ Occupation is required!")
+    name = st.text_input("Name*")
+    occupation = st.text_input("Occupation*")
+    location = st.text_input("Location")
+    tech = st.selectbox("Tech Level", ["Low","Medium","High"])
+    traits = st.text_area("Traits (comma-separated)")
+
+    submit = st.form_submit_button("Add Persona")
+
+    if submit:
+        if not name or not occupation:
+            st.sidebar.error("Name and Occupation required.")
         else:
-            new_persona = {
-                "id": f"p{len(st.session_state.personas) + 1}",
-                "name": new_name.strip(),
-                "occupation": new_occupation.strip(),
-                "location": new_location.strip() or "Unknown",
-                "tech_proficiency": new_tech,
-                "behavioral_traits": [t.strip() for t in new_traits.split(",") if t.strip()]
+            new_p = {
+                "id": f"p{len(personas)+1}",
+                "name": name,
+                "occupation": occupation,
+                "location": location or "Unknown",
+                "tech_proficiency": tech,
+                "behavioral_traits": [t.strip() for t in traits.split(",") if t.strip()]
             }
-            st.session_state.personas.append(new_persona)
-            
-            # Save to JSON
-            try:
-                with open("personas.json", "w", encoding="utf-8") as f:
-                    json.dump(st.session_state.personas, f, indent=2)
-                st.success(f"✅ Persona '{new_name}' added successfully!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Error saving persona: {str(e)}")
-
-# Display existing personas count
-st.sidebar.markdown("---")
-st.sidebar.metric("Total Personas", len(st.session_state.personas))
-
-# Export/Import Personas
-with st.sidebar.expander("🔄 Export/Import Personas"):
-    if st.button("📥 Export Personas"):
-        personas_json = json.dumps(st.session_state.personas, indent=2)
-        st.download_button(
-            label="Download personas.json",
-            data=personas_json,
-            file_name="personas.json",
-            mime="application/json"
-        )
-    
-    uploaded_personas = st.file_uploader("📤 Import Personas", type=["json"])
-    if uploaded_personas:
-        try:
-            imported_personas = json.load(uploaded_personas)
-            st.session_state.personas = imported_personas
+            personas.append(new_p)
             with open("personas.json", "w", encoding="utf-8") as f:
-                json.dump(imported_personas, f, indent=2)
-            st.success("✅ Personas imported successfully!")
+                json.dump(personas, f, indent=2)
+            st.sidebar.success("Added!")
             st.rerun()
-        except Exception as e:
-            st.error(f"❌ Error importing personas: {str(e)}")
 
-# Footer
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📖 About")
-st.sidebar.info(
-    "This tool simulates user feedback from diverse personas to help you validate "
-    "product ideas and features before development."
-)
+st.sidebar.metric("Total Personas", len(personas))
