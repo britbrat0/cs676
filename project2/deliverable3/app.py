@@ -85,6 +85,21 @@ def detect_insight_or_concern(text):
         return "concern"
     return None
 
+def extract_persona_response(line):
+    """
+    Remove persona name and metadata, return the actual response text.
+    Example:
+    "John: - Response: I think this is great" -> "I think this is great"
+    """
+    # Remove persona prefix
+    parts = re.split(r":\s*-?\s*Response:?", line, maxsplit=1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    else:
+        # fallback to full line
+        return line
+
+
 # -------------------------
 # Prompt Builder
 # -------------------------
@@ -268,38 +283,36 @@ if st.session_state.conversation_history.strip():
     st.info("💡 Continue the discussion using the **question field above** to ask another question.")
 
     # --- Live Persona Sentiment Heatmap ---
+    if st.session_state.conversation_history.strip() and selected_personas:
     sentiment_data = []
-    for line in st.session_state.conversation_history.split("\n"):
+
+    lines = st.session_state.conversation_history.split("\n")
+    for line in lines:
         for p in selected_personas:
             if line.startswith(p["name"]):
-                sentiment = detect_insight_or_concern(line)
-                score = 0
-                if sentiment == "insight":
-                    score = 1
-                elif sentiment == "concern":
-                    score = -1
-                sentiment_data.append({"Persona": p["name"], "Sentiment": score})
+                response_text = extract_persona_response(line)
+                sentiment = detect_insight_or_concern(response_text)
+                score = 1 if sentiment == "insight" else -1 if sentiment == "concern" else 0
+                sentiment_data.append({"Persona": p["name"], "Line": line, "Sentiment": score})
 
     if sentiment_data:
-        df = pd.DataFrame(sentiment_data)
-        df_summary = df.groupby("Persona")["Sentiment"].mean().reset_index()
+        df_sentiment = pd.DataFrame(sentiment_data)
+        df_summary = df_sentiment.groupby("Persona")["Sentiment"].mean().reset_index()
 
         st.markdown("## 🔥 Persona Sentiment Heatmap")
-        chart = (
-            alt.Chart(df_summary)
-            .mark_bar()
-            .encode(
-                x=alt.X("Persona", sort="-y"),
-                y=alt.Y("Sentiment", title="Avg Sentiment Score", scale=alt.Scale(domain=[-1,1])),
-                color=alt.Color(
-                    "Sentiment",
-                    scale=alt.Scale(domain=[-1,0,1], range=["#F94144","#FFC300","#3CB44B"])
-                ),
-                tooltip=["Persona", "Sentiment"]
-            )
-            .properties(height=250)
-        )
-        st.altair_chart(chart, use_container_width=True)
+        heatmap_chart = alt.Chart(df_summary).mark_bar().encode(
+            x=alt.X("Persona", sort="-y"),
+            y=alt.Y("Sentiment", title="Average Sentiment Score"),
+            color=alt.Color(
+                "Sentiment",
+                scale=alt.Scale(domain=[-1,0,1], range=["#F94144","#FFC300","#3CB44B"]),
+                legend=None
+            ),
+            tooltip=["Persona", "Sentiment"]
+        ).properties(height=200)
+
+        st.altair_chart(heatmap_chart, use_container_width=True)
+
     else:
         st.info("No sentiment data yet for the heatmap.")
 else:
