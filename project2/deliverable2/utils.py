@@ -1,5 +1,6 @@
 import json
 import streamlit as st
+import re
 from config import DEFAULT_PERSONA_PATH
 
 # -------------------------
@@ -89,3 +90,42 @@ def save_personas(personas, path=DEFAULT_PERSONA_PATH):
     except Exception as e:
         st.error(f"❌ Could not save personas: {e}")
         return False
+
+# -------------------------
+# Persona Display Helpers
+# -------------------------
+PERSONA_COLORS = {}
+
+def get_color_for_persona(name):
+    """
+    Returns a consistent color for a persona name. Generates one if not exists.
+    """
+    if name not in PERSONA_COLORS:
+        PERSONA_COLORS[name] = f"#{(hash(name) & 0xFFFFFF):06x}"
+    return PERSONA_COLORS[name]
+
+def format_response_line(text, persona_name, highlight=None):
+    """
+    Formats a persona response line with color and optional highlight (insight/concern).
+    """
+    color = get_color_for_persona(persona_name)
+    background = ""
+    if highlight == "insight":
+        background = "background-color: #d4edda;"
+    elif highlight == "concern":
+        background = "background-color: #f8d7da;"
+    return f"<div style='color:{color}; {background} padding:6px; margin:4px 0; border-left:4px solid {color}; border-radius:4px;'>{text}</div>"
+
+# -------------------------
+# Insight / Concern Detection
+# -------------------------
+def detect_insight_or_concern(text):
+    """
+    Returns 'insight' or 'concern' based on keywords in the text, or None if neutral.
+    """
+    t = text.lower()
+    if re.search(r'\b(think|improve|great|helpful|excellent|love)\b', t):
+        return "insight"
+    if re.search(r'\b(worry|concern|problem|issue|hard|frustrated)\b', t):
+        return "concern"
+    return None
