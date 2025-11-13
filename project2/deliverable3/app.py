@@ -314,10 +314,10 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
         st.altair_chart(heatmap_chart, use_container_width=True)
 
-        else:
-            st.info("No sentiment data yet for the heatmap.")
     else:
-        st.info("💡 No conversation yet. Ask your personas a question to get started!")
+        st.info("No sentiment data yet for the heatmap.")
+else:
+    st.info("💡 No conversation yet. Ask your personas a question to get started!")
 
 
 
