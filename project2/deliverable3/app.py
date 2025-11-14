@@ -99,7 +99,7 @@ if ask_btn:
             try:
                 resp = generate_response_with_retry(feature_inputs, selected_personas, st.session_state.conversation_history, model_choice)
                 st.session_state.conversation_history += resp + "\n"
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Failed to generate response: {e}")
 
@@ -118,7 +118,7 @@ if report_btn:
 
 if clear_btn:
     st.session_state.conversation_history = ""
-    st.experimental_rerun()
+    st.rerun()
 
 st.markdown("---")
 
@@ -182,6 +182,6 @@ with st.sidebar.form("new_persona_form"):
                 st.sidebar.success("✅ Persona added and saved.")
             else:
                 st.sidebar.error("❌ Persona added but failed to save.")
-            st.experimental_rerun()
+            st.rerun()
 
 st.sidebar.metric("Total Personas", len(personas))
