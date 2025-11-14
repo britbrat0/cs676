@@ -4,16 +4,15 @@ import json
 import re
 import pandas as pd
 import altair as alt
-
+import logging
+import time
 from config import MODEL_CHOICES, DEFAULT_MODEL, PERSONA_COLORS, OPENAI_DEFAULTS, REPORT_DEFAULTS, DEFAULT_PERSONA_PATH
-from utils import (
-    get_personas,
-    validate_persona,
-    save_personas,
-    get_color_for_persona,
-    format_response_line,
-    detect_insight_or_concern
-)
+from utils import get_personas, validate_persona, save_personas, get_color_for_persona, format_response_line, detect_insight_or_concern
+
+# -------------------------
+# Logging
+# -------------------------
+logging.basicConfig(filename="app.log", level=logging.INFO)
 
 # -------------------------
 # Page Config
@@ -27,6 +26,21 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = ""
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+# -------------------------
+# Optional Password Protection
+# -------------------------
+PASSWORD_PROTECT = False
+PASSWORD = "YOUR_SECRET_PASSWORD"  # Change to your desired password
+
+if PASSWORD_PROTECT and not st.session_state.authenticated:
+    pw = st.text_input("Enter password to access app", type="password")
+    if pw == PASSWORD:
+        st.session_state.authenticated = True
+    else:
+        st.stop()
 
 # -------------------------
 # Sidebar – API Key & Model
@@ -38,7 +52,6 @@ api_key_input = st.sidebar.text_input(
     value=st.session_state.api_key,
     help="Your API key is not stored permanently"
 )
-
 if api_key_input:
     st.session_state.api_key = api_key_input
     openai.api_key = api_key_input
@@ -49,145 +62,32 @@ else:
 model_choice = st.sidebar.selectbox("Select Model", MODEL_CHOICES, index=MODEL_CHOICES.index(DEFAULT_MODEL))
 
 # -------------------------
-# Personas
+# Load Personas
 # -------------------------
 st.sidebar.header("👥 Personas")
 uploaded_persona_file = st.sidebar.file_uploader("Upload personas.json", type=["json"])
 personas = get_personas(uploaded_persona_file)
-
 if not personas:
     st.sidebar.error("⚠️ No personas loaded. Add personas.json or upload a file.")
 else:
     st.sidebar.success(f"Loaded {len(personas)} personas.")
 
 # -------------------------
-# Persona Colors Helpers
+# Utility Functions
 # -------------------------
-def get_color_for_persona(name):
-    if name not in PERSONA_COLORS:
-        PERSONA_COLORS[name] = f"#{(hash(name) & 0xFFFFFF):06x}"
-    return PERSONA_COLORS[name]
-
-def format_response_line(text, name, highlight=None):
-    color = get_color_for_persona(name)
-    bg = ""
-    if highlight == "insight":
-        bg = "background-color: #d4edda;"
-    elif highlight == "concern":
-        bg = "background-color: #f8d7da;"
-    return f"<div style='color:{color}; {bg} padding:6px; margin:4px 0; border-left:4px solid {color}; border-radius:4px;'>{text}</div>"
-
-def detect_insight_or_concern(text):
-    t = text.lower()
-    if re.search(r'\b(think|improve|great|helpful|excellent|love)\b', t):
-        return "insight"
-    if re.search(r'\b(worry|concern|problem|issue|hard|frustrated)\b', t):
-        return "concern"
-    return None
-
 def extract_persona_response(line):
-    """
-    Remove persona name and metadata, return the actual response text.
-    Example:
-    "John: - Response: I think this is great" -> "I think this is great"
-    """
-    # Remove persona prefix
     parts = re.split(r":\s*-?\s*Response:?", line, maxsplit=1)
-    if len(parts) == 2:
-        return parts[1].strip()
-    else:
-        # fallback to full line
-        return line
+    return parts[1].strip() if len(parts) == 2 else line
 
-
-# -------------------------
-# Prompt Builder
-# -------------------------
-def build_prompt(personas, feature_inputs, conversation_history=""):
-    persona_block = "\n".join(
-        f"- {p['name']} ({p['occupation']}, {p.get('location','')}, Tech: {p['tech_proficiency']})"
-        for p in personas
-    )
-    feature_block = ""
-    for k, v in feature_inputs.items():
-        vtxt = ", ".join(v) if isinstance(v, list) else v
-        feature_block += f"{k}:\n{vtxt}\n\n"
-    prompt = f"""
-Personas:
-{persona_block}
-
-Features:
-{feature_block}
-
-Simulate a realistic persona conversation:
-- Each persona speaks in 2–3 sentences.
-- Format:
-
-[Persona Name]:
-- Response:
-- Reasoning:
-- Confidence:
-- Suggested follow-up:
-
-"""
-    if conversation_history:
-        prompt += f"\nPrevious conversation:\n{conversation_history}\nContinue naturally."
-    return prompt.strip()
-
-# -------------------------
-# GPT API Calls
-# -------------------------
-def generate_response(feature_inputs, personas, history, model):
-    if not st.session_state.api_key:
-        st.error("API key missing.")
-        return ""
-    prompt = build_prompt(personas, feature_inputs, history)
-    try:
-        response = openai.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "Simulate multi-persona UX research feedback."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=OPENAI_DEFAULTS["temperature"],
-            max_tokens=OPENAI_DEFAULTS["max_tokens"]
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        st.error(f"❌ {e}")
-        return ""
-
-def generate_feedback_report(conversation, model):
-    prompt = f"""
-Analyze the conversation and produce a structured UX research report.
-
-Conversation:
-{conversation}
-
-Sections:
-- Executive Summary
-- Patterns & Themes
-- Consensus Points
-- Disagreements & Concerns
-- Persona Insights
-- Actionable Recommendations
-- Quantitative Metrics (acceptance %, likelihood per persona, priority)
-- Risk Assessment
-"""
-    try:
-        response = openai.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are an expert product analyst."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=REPORT_DEFAULTS["temperature"],
-            max_tokens=REPORT_DEFAULTS["max_tokens"]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        st.error(f"❌ {e}")
-        return ""
+def generate_response_with_retry(feature_inputs, personas, history, model, retries=3):
+    for attempt in range(retries):
+        try:
+            return generate_response(feature_inputs, personas, history, model)
+        except Exception as e:
+            logging.error(f"OpenAI API call failed (attempt {attempt+1}): {e}")
+            time.sleep(2 ** attempt)
+    st.error("Failed to generate response after multiple attempts.")
+    return ""
 
 # -------------------------
 # Main UI
@@ -238,7 +138,7 @@ if ask_btn:
         if question:
             st.session_state.conversation_history += f"\n**User:** {question}\n"
         with st.spinner("Thinking..."):
-            resp = generate_response(feature_inputs, selected_personas, st.session_state.conversation_history, model_choice)
+            resp = generate_response_with_retry(feature_inputs, selected_personas, st.session_state.conversation_history, model_choice)
             if resp:
                 st.session_state.conversation_history += resp + "\n"
                 st.rerun()
@@ -257,35 +157,26 @@ if clear_btn:
     st.session_state.conversation_history = ""
     st.rerun()
 
-# --- Conversation Display + Live Persona Sentiment Heatmap ---
+# --- Conversation Display & Sentiment Heatmap
 st.header("💬 Conversation History")
-
-if st.session_state.conversation_history.strip() and selected_personas:
-    conversation_container = st.container()
-    
-    # --- Display conversation lines with highlighting ---
-    with conversation_container:
-        lines = st.session_state.conversation_history.split("\n")
-        for line in lines:
-            matched = False
-            for p in selected_personas:
-                if line.startswith(p["name"]):
-                    response_text = extract_persona_response(line)
-                    highlight = detect_insight_or_concern(response_text)
-                    st.markdown(format_response_line(line, p["name"], highlight), unsafe_allow_html=True)
-                    matched = True
-                    break
-            if not matched:
-                if line.startswith("**User:**") or line.startswith("User:"):
-                    st.markdown(f"**{line}**")
-                else:
-                    st.markdown(line)
+if st.session_state.conversation_history.strip():
+    lines = st.session_state.conversation_history.split("\n")
+    for line in lines:
+        matched = False
+        for p in selected_personas:
+            if line.startswith(p["name"]):
+                hl = detect_insight_or_concern(line)
+                st.markdown(format_response_line(line, p["name"], hl), unsafe_allow_html=True)
+                matched = True
+                break
+        if not matched:
+            st.markdown(line)
 
     st.info("💡 Continue the discussion using the **question field above** to ask another question.")
 
-    # --- Build sentiment data for heatmap ---
+    # --- Sentiment Heatmap ---
     sentiment_data = []
-    for line in st.session_state.conversation_history.split("\n"):
+    for line in lines:
         for p in selected_personas:
             if line.startswith(p["name"]):
                 response_text = extract_persona_response(line)
@@ -295,15 +186,11 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
     if sentiment_data:
         df_sentiment = pd.DataFrame(sentiment_data)
-        # Aggregate average sentiment per persona
-        df_summary = df_sentiment.groupby("Persona")["Sentiment"].mean().reindex(
-            [p["name"] for p in selected_personas], fill_value=0
-        ).reset_index()
-
+        df_summary = df_sentiment.groupby("Persona")["Sentiment"].mean().reset_index()
         st.markdown("## 🔥 Persona Sentiment Heatmap")
         heatmap_chart = alt.Chart(df_summary).mark_bar().encode(
             x=alt.X("Persona", sort="-y"),
-            y=alt.Y("Sentiment", title="Average Sentiment Score", scale=alt.Scale(domain=[-1,1])),
+            y=alt.Y("Sentiment", title="Average Sentiment Score"),
             color=alt.Color(
                 "Sentiment",
                 scale=alt.Scale(domain=[-1,0,1], range=["#F94144","#FFC300","#3CB44B"]),
@@ -311,17 +198,12 @@ if st.session_state.conversation_history.strip() and selected_personas:
             ),
             tooltip=["Persona", "Sentiment"]
         ).properties(height=200)
-
         st.altair_chart(heatmap_chart, use_container_width=True)
-    else:
-        st.info("No sentiment data yet for the heatmap.")
+
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
 
-
-
-
-# --- Sidebar Persona Management
+# --- Sidebar Persona Management & Auto Backup
 st.sidebar.markdown("---")
 st.sidebar.header("➕ Create Persona")
 with st.sidebar.form("new_persona_form"):
@@ -344,9 +226,8 @@ with st.sidebar.form("new_persona_form"):
                 "behavioral_traits": [t.strip() for t in traits.split(",") if t.strip()]
             }
             personas.append(new_p)
-            with open(DEFAULT_PERSONA_PATH, "w", encoding="utf-8") as f:
-                json.dump(personas, f, indent=2)
-            st.sidebar.success("Added!")
+            save_personas(personas)  # saves to DEFAULT_PERSONA_PATH
+            st.sidebar.success("Added and backed up!")
             st.rerun()
 
 st.sidebar.metric("Total Personas", len(personas))
