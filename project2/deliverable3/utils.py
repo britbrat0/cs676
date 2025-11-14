@@ -121,17 +121,17 @@ def detect_insight_or_concern(text: str) -> Optional[str]:
         return "concern"
     return None
 
-def extract_persona_response(line: str) -> str:
+def extract_persona_response(line):
     """
-    Strip persona prefix and metadata to return plain response text.
-    E.g. "John: - Response: I think..." -> "I think..."
+    Remove persona name and metadata, return only the response text.
+    Example:
+    "John: - Response: I think this is great" -> "I think this is great"
     """
     parts = re.split(r":\s*-?\s*Response:?", line, maxsplit=1)
     if len(parts) == 2:
         return parts[1].strip()
-    # fallback: remove leading "Name:" if present
-    m = re.split(r"^[^:]+:\s*", line, maxsplit=1)
-    return m[1].strip() if len(m) == 2 else line.strip()
+    else:
+        return line
 
 def score_sentiment(text: str) -> int:
     """Simple numeric score: insight=1, concern=-1, neutral=0"""
