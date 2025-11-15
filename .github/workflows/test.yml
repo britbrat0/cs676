@@ -1,0 +1,52 @@
+name: Run Full Test Suite
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+          pip install locust
+          pip install playwright pytest-playwright
+          playwright install --with-deps chromium
+
+      - name: Run unit & integration tests
+        run: pytest tests/unit tests/integration -q --disable-warnings
+
+      - name: Run E2E browser tests
+        run: pytest tests/e2e --headed --browser chromium
+
+      - name: Report coverage
+        run: pytest --cov=.
+
+  load-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Locust
+        run: pip install locust
+
+      - name: Run load test
+        run: locust -f tests/load/locustfile.py --headless -u 20 -r 2 -t 30s
