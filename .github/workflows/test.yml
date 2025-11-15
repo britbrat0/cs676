@@ -21,6 +21,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
+        working-directory: project2/deliverable3
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-cov
@@ -29,12 +30,15 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Run unit & integration tests
+        working-directory: project2/deliverable3
         run: pytest tests/unit tests/integration -q --disable-warnings
 
       - name: Run E2E browser tests
+        working-directory: project2/deliverable3
         run: pytest tests/e2e --headed --browser chromium
 
       - name: Report coverage
+        working-directory: project2/deliverable3
         run: pytest --cov=.
 
   load-test:
@@ -46,7 +50,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Locust
+        working-directory: project2/deliverable3
         run: pip install locust
 
       - name: Run load test
+        working-directory: project2/deliverable3
         run: locust -f tests/load/locustfile.py --headless -u 20 -r 2 -t 30s
