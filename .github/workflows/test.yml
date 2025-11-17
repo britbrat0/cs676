@@ -31,15 +31,22 @@ jobs:
 
       - name: Run unit & integration tests
         working-directory: project2/deliverable3
+        env:
+          PYTHONPATH: project2/deliverable3
         run: pytest tests/unit tests/integration -q --disable-warnings
 
       - name: Run E2E browser tests
         working-directory: project2/deliverable3
+        env:
+          PYTHONPATH: project2/deliverable3
         run: pytest tests/e2e --headed --browser chromium
 
       - name: Report coverage
         working-directory: project2/deliverable3
+        env:
+          PYTHONPATH: project2/deliverable3
         run: pytest --cov=.
+
 
   load-test:
     runs-on: ubuntu-latest
