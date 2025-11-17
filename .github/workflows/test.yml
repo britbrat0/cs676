@@ -47,7 +47,6 @@ jobs:
           PYTHONPATH: project2/deliverable3
         run: pytest --cov=.
 
-
   load-test:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
@@ -57,8 +56,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Locust
+        working-directory: project2/deliverable3
         run: pip install locust
 
       - name: Run load test
         working-directory: project2/deliverable3
+        env:
+          PYTHONPATH: project2/deliverable3
         run: locust -f tests/load/locustfile.py --headless -u 20 -r 2 -t 30s
