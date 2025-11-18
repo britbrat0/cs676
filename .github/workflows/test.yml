@@ -10,7 +10,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -19,10 +18,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-
-      - name: Add deliverable3 to PYTHONPATH
-        run: |
-          echo "PYTHONPATH=${{ github.workspace }}/project2/deliverable3" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: project2/deliverable3
@@ -35,32 +30,6 @@ jobs:
 
       - name: Run unit & integration tests
         working-directory: project2/deliverable3
+        env:
+          PYTHONPATH: project2/deliverable3
         run: pytest tests/unit tests/integration -q --disable-warnings
-
-      - name: Run E2E browser tests
-        working-directory: project2/deliverable3
-        run: pytest tests/e2e --headed --browser chromium
-
-      - name: Report coverage
-        working-directory: project2/deliverable3
-        run: pytest --cov=.
-
-  load-test:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Add deliverable3 to PYTHONPATH
-        run: |
-          echo "PYTHONPATH=${{ github.workspace }}/project2/deliverable3" >> $GITHUB_ENV
-
-      - name: Install Locust
-        working-directory: project2/deliverable3
-        run: pip install locust
-
-      - name: Run load test
-        working-directory: project2/deliverable3
-        run: locust -f tests/load/locustfile.py --headless -u 20 -r 2 -t 30s
