@@ -1,30 +1,31 @@
-# utils.py
 import json
 import re
-from typing import List, Dict, Optional
 import streamlit as st
 import pandas as pd
 import altair as alt
+import logging
+from typing import List, Dict, Optional
+from config import DEFAULT_PERSONA_PATH, PERSONA_COLORS as CONFIG_PERSONA_COLORS
 
-from config import DEFAULT_PERSONA_PATH, PERSONA_COLORS as DEFAULT_COLORS
+log = logging.getLogger(__name__)
 
-# internal color map (mutable)
-PERSONA_COLORS = dict(DEFAULT_COLORS)
-
+# Local color cache that starts from config's colors (if provided)
+PERSONA_COLORS = dict(CONFIG_PERSONA_COLORS) if isinstance(CONFIG_PERSONA_COLORS, dict) else {}
 
 # -------------------------
-# File I/O
+# Personas I/O & validation
 # -------------------------
 def load_personas_from_file(path: str = DEFAULT_PERSONA_PATH) -> List[Dict]:
+    """Load personas from JSON file. Returns [] on errors."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, list):
-                st.warning(f"⚠️ {path} content is not a list. Returning empty list.")
+                st.warning(f"⚠️ {path} does not contain a list. Returning empty personas.")
                 return []
             return data
     except FileNotFoundError:
-        # don't spam errors for missing file; caller may upload
+        log.info("personas file not found: %s", path)
         return []
     except json.JSONDecodeError as e:
         st.error(f"❌ Malformed JSON in {path}: {e}")
@@ -33,47 +34,36 @@ def load_personas_from_file(path: str = DEFAULT_PERSONA_PATH) -> List[Dict]:
         st.error(f"❌ Unexpected error loading {path}: {e}")
         return []
 
-
-def save_personas(personas: List[Dict], path: str = DEFAULT_PERSONA_PATH) -> bool:
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(personas, f, indent=2)
-        return True
-    except Exception as e:
-        st.error(f"❌ Could not save personas: {e}")
-        return False
-
-
 def get_personas(uploaded_file=None, path: str = DEFAULT_PERSONA_PATH) -> List[Dict]:
     """
-    Loads personas from repo file, optionally replaces them with an uploaded file.
+    Return personas. If uploaded_file is provided (streamlit UploadedFile),
+    attempt to load and replace saved personas.
     """
     personas = load_personas_from_file(path)
+
     if uploaded_file:
         try:
             imported = json.load(uploaded_file)
             if not isinstance(imported, list):
-                st.error("Uploaded file must be a JSON list of personas.")
+                st.error("Uploaded persona file must be a JSON list.")
             else:
                 personas = imported
-                # try saving to default path
+                # try to persist
                 try:
                     with open(path, "w", encoding="utf-8") as f:
                         json.dump(personas, f, indent=2)
-                except Exception:
-                    # saving is optional; warn but still return imported
-                    st.warning("Uploaded personas loaded but could not be saved to repo path.")
+                    st.success("✅ Personas imported and saved successfully!")
+                except Exception as e:
+                    st.error(f"❌ Could not save uploaded personas to disk: {e}")
         except json.JSONDecodeError:
-            st.error("Uploaded file contains invalid JSON.")
+            st.error("❌ Uploaded file contains invalid JSON.")
         except Exception as e:
-            st.error(f"Error reading uploaded file: {e}")
+            st.error(f"❌ Error reading uploaded file: {e}")
+
     return personas
 
-
-# -------------------------
-# Validation
-# -------------------------
 def validate_persona(persona: Dict) -> bool:
+    """Basic validation for persona structure."""
     required = ["name", "occupation", "tech_proficiency", "behavioral_traits"]
     for r in required:
         if r not in persona or persona[r] in (None, "", []):
@@ -82,17 +72,28 @@ def validate_persona(persona: Dict) -> bool:
         return False
     return True
 
+def save_personas(personas: List[Dict], path: str = DEFAULT_PERSONA_PATH) -> bool:
+    """Persist personas to disk. Returns True on success."""
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(personas, f, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"❌ Could not save personas: {e}")
+        log.exception("save_personas failed")
+        return False
 
 # -------------------------
-# Colors & display
+# Display & formatting
 # -------------------------
 def get_color_for_persona(name: str) -> str:
+    """Return or generate a stable hex color for a persona name."""
     if name not in PERSONA_COLORS:
         PERSONA_COLORS[name] = f"#{(hash(name) & 0xFFFFFF):06x}"
     return PERSONA_COLORS[name]
 
-
 def format_response_line(text: str, persona_name: str, highlight: Optional[str] = None) -> str:
+    """Return HTML string for styled persona line."""
     color = get_color_for_persona(persona_name)
     background = ""
     if highlight == "insight":
@@ -100,106 +101,80 @@ def format_response_line(text: str, persona_name: str, highlight: Optional[str] 
     elif highlight == "concern":
         background = "background-color: #f8d7da;"
     return (
-        f"<div style='color:{color}; {background} "
-        "padding:6px; margin:4px 0; border-left:4px solid {color}; "
-        "border-radius:4px; white-space:pre-wrap;'>{text}</div>"
-    ).format(color=color)
-
+        f"<div style='color:{color}; {background} padding:8px; margin:6px 0; "
+        f"border-left:4px solid {color}; border-radius:4px; white-space:pre-wrap;'>{text}</div>"
+    )
 
 # -------------------------
-# Sentiment detection & scoring
+# Text parsing & sentiment
 # -------------------------
+_INSIGHT_PATTERN = re.compile(r'\b(think|improve|great|helpful|excellent|love|benefit|useful|like)\b', re.I)
+_CONCERN_PATTERN = re.compile(r'\b(worry|concern|problem|issue|difficult|hard|confused|frustrat|dislike)\b', re.I)
+
 def detect_insight_or_concern(text: str) -> Optional[str]:
-    """
-    Return 'insight' if positive keywords present, 'concern' if negative keywords present, else None.
-    Case-insensitive and handles common word forms.
-    """
+    """Return 'insight' / 'concern' / None based on simple keyword matching."""
     if not text:
         return None
-    t = text.lower()
-
-    # positive stems/words
-    positive_pattern = r"\b(thank|think|like|love|enjoy|great|improv|helpful|excellent|useful|benefit)\w*\b"
-    negative_pattern = r"\b(worri|worry|worried|concern|concerned|proble|issue|difficult|hard|frustrat|frustrated|hate|unsure)\w*\b"
-
-    if re.search(positive_pattern, t):
+    if _INSIGHT_PATTERN.search(text):
         return "insight"
-    if re.search(negative_pattern, t):
+    if _CONCERN_PATTERN.search(text):
         return "concern"
     return None
 
+def extract_persona_response(line):
+    """
+    Remove persona name and metadata, return only the response text.
+    Example:
+    "John: - Response: I think this is great" -> "I think this is great"
+    """
+    parts = re.split(r":\s*-?\s*Response:?", line, maxsplit=1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    else:
+        return line
 
 def score_sentiment(text: str) -> int:
-    s = detect_insight_or_concern(text)
-    if s == "insight":
-        return 1
-    if s == "concern":
-        return -1
-    return 0
-
-
-def extract_persona_response(line: str) -> str:
-    """
-    Remove persona name and the 'Response:' label if present and return the human text.
-    Examples:
-    'John: - Response: I like this' -> 'I like this'
-    'John: I like this' -> 'I like this'
-    """
-    # Remove leading "Name:" prefix
-    # First try pattern where assistant provided "- Response: <text>"
-    m = re.split(r":\s*-?\s*Response:?\s*", line, maxsplit=1)
-    if len(m) == 2 and m[1].strip():
-        return m[1].strip()
-    # fallback: remove "Name:" prefix
-    m2 = re.split(r"^[^:]+:\s*", line, maxsplit=1)
-    if len(m2) == 2:
-        return m2[1].strip()
-    return line.strip()
-
+    """Simple numeric score: insight=1, concern=-1, neutral=0"""
+    cat = detect_insight_or_concern(text)
+    return 1 if cat == "insight" else -1 if cat == "concern" else 0
 
 # -------------------------
-# Heatmap helpers
+# Heatmap / Chart builder
 # -------------------------
 def build_sentiment_summary(lines: List[str], selected_personas: List[Dict]) -> pd.DataFrame:
     """
-    Given conversation lines and selected_personas, return a DataFrame with average sentiment per persona.
-    Ensures order follows selected_personas list.
+    Return a DataFrame with average sentiment score per persona.
+    Ensures each selected persona appears in the result.
     """
-    records = []
-    persona_names = [p["name"] for p in selected_personas]
-    for ln in lines:
-        for name in persona_names:
-            if ln.startswith(name):
-                txt = extract_persona_response(ln)
-                records.append({"Persona": name, "Sentiment": score_sentiment(txt)})
-                break
-    if not records:
-        # return a DataFrame with zeroed sentiments for each persona
-        df0 = pd.DataFrame({"Persona": persona_names, "Sentiment": [0] * len(persona_names)})
-        return df0
+    rows = []
+    for line in lines:
+        for p in selected_personas:
+            if line.startswith(p["name"]):
+                text = extract_persona_response(line)
+                rows.append({"Persona": p["name"], "Sentiment": score_sentiment(text)})
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Persona", "Sentiment"])
+    # ensure order & include personas with no rows
+    names = [p["name"] for p in selected_personas]
+    if df.empty:
+        return pd.DataFrame({"Persona": names, "Sentiment": [0]*len(names)})
+    summary = df.groupby("Persona")["Sentiment"].mean().reindex(names, fill_value=0).reset_index()
+    return summary
 
-    df = pd.DataFrame(records)
-    df_summary = df.groupby("Persona")["Sentiment"].mean().reindex(persona_names, fill_value=0).reset_index()
-    return df_summary
-
-
-def build_heatmap_chart(df_summary: pd.DataFrame) -> alt.Chart:
-    """
-    Return an Altair bar chart representing average sentiment per persona.
-    """
+def build_heatmap_chart(df_summary: pd.DataFrame, height: int = 220) -> alt.Chart:
+    """Return an Altair bar chart representing sentiment summary."""
     chart = (
         alt.Chart(df_summary)
         .mark_bar()
         .encode(
             x=alt.X("Persona", sort="-y"),
-            y=alt.Y("Sentiment", scale=alt.Scale(domain=[-1, 1]), title="Average Sentiment"),
+            y=alt.Y("Sentiment", title="Average Sentiment Score", scale=alt.Scale(domain=[-1, 1])),
             color=alt.Color(
                 "Sentiment",
                 scale=alt.Scale(domain=[-1, 0, 1], range=["#F94144", "#FFC300", "#3CB44B"]),
-                legend=None,
+                legend=None
             ),
-            tooltip=["Persona", alt.Tooltip("Sentiment", format=".2f")],
+            tooltip=["Persona", "Sentiment"]
         )
-        .properties(height=200)
+        .properties(height=height)
     )
     return chart
