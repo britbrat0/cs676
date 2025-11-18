@@ -1,6 +1,9 @@
+# app.py
 import streamlit as st
 import json
 from typing import List, Dict
+
+import openai
 
 from config import MODEL_CHOICES, DEFAULT_MODEL, DEFAULT_PERSONA_PATH
 from utils import (
@@ -14,62 +17,48 @@ from utils import (
 )
 from ai_helpers import generate_response_with_retry, generate_feedback_report
 
+# Expose a client reference so tests can patch app.client.responses.create
+client = openai
 
-# ================================================================
-# ✔ VERSION REQUIRED BY TESTS
-# Tests import this function as:
-#   from app import generate_persona_responses
-# They expect:
-#   generate_persona_responses(prompt, personas) → list[{ "error": bool }]
-# ================================================================
-def generate_persona_responses(prompt: str, personas: List[Dict]):
-    """
-    Minimal standalone version required by tests.
-    Does NOT depend on Streamlit, session_state, or ai_helpers.
 
-    Behavior expected by tests:
-        • Accepts (prompt, personas)
-        • Returns a list
-        • Each item is a dict
-        • On API failure, item["error"] == True
+# ------------------------------------------------------------
+# Function required by tests (non-UI)
+# ------------------------------------------------------------
+def generate_persona_responses(feature_inputs, personas, conversation_history, model_choice) -> List[Dict]:
     """
+    Called by unit/integration tests. Returns a list of dicts for each persona:
+      [{"name": "...", "response": "...", "error": False}, ...]
+    If generation fails, returns entries with error=True.
+    This function does NOT rely on Streamlit session_state.
+    """
+    try:
+        # call LM wrapper
+        output_text = generate_response_with_retry(feature_inputs, personas, conversation_history, model_choice)
+    except Exception as e:
+        # return error markers for each persona
+        return [{"name": p.get("name"), "response": "", "error": True, "error_msg": str(e)} for p in personas]
+
+    # If we got text, attempt to parse one line per persona
+    lines = [ln.strip() for ln in str(output_text).split("\n") if ln.strip()]
     results = []
-
-    for _ in personas:
-        try:
-            # During unit tests, this is forced to fail by a fixture.
-            # So we simulate an API call and let the failure bubble up.
-            raise Exception("Simulated API failure")
-        except Exception:
-            results.append({"error": True})
-
+    for p in personas:
+        found = False
+        for ln in lines:
+            if ln.startswith(p.get("name")):
+                resp_txt = extract_persona_response(ln)
+                results.append({"name": p.get("name"), "response": resp_txt, "error": False})
+                found = True
+                break
+        if not found:
+            # not found: include empty response but not an error
+            results.append({"name": p.get("name"), "response": "", "error": False})
     return results
 
 
-# ================================================================
-# ✔ INTERNAL version used by Streamlit UI
-# This keeps your existing functionality untouched.
-# ================================================================
-def generate_persona_responses_internal(feature_inputs, personas, conversation_history, model_choice):
-    """
-    This is the real version used by the UI.
-    """
-    return generate_response_with_retry(
-        feature_inputs=feature_inputs,
-        personas=personas,
-        conversation_history=conversation_history,
-        model_choice=model_choice
-    )
-
-
 # ------------------------------------------------------------
-# UI moved into main() so importing app.py in tests is safe
+# UI logic in main() so tests can import app safely
 # ------------------------------------------------------------
 def main():
-
-    # -------------------------
-    # Page config & state
-    # -------------------------
     st.set_page_config(page_title="Persona Feedback Simulator", page_icon="💬", layout="wide")
 
     if "conversation_history" not in st.session_state:
@@ -77,15 +66,12 @@ def main():
     if "api_key" not in st.session_state:
         st.session_state.api_key = ""
 
-    # -------------------------
-    # Sidebar: API key, model, personas upload
-    # -------------------------
+    # Sidebar
     st.sidebar.header("🔑 API Configuration")
     api_key_input = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state.api_key)
     if api_key_input:
         st.session_state.api_key = api_key_input
-        import openai
-        openai.api_key = api_key_input
+        openai.api_key = api_key_input  # ensure ai_helpers.client (module-level openai) uses this key
     else:
         st.sidebar.info("Enter OpenAI API key to enable generation.")
 
@@ -97,9 +83,7 @@ def main():
     personas = get_personas(uploaded, path=DEFAULT_PERSONA_PATH)
     st.sidebar.metric("Total Personas", len(personas))
 
-    # -------------------------
-    # Main UI - Feature input
-    # -------------------------
+    # Main UI
     st.title("💬 Persona Feedback Simulator")
     st.header("📝 Feature Description")
     tabs = st.tabs(["Text", "Files"])
@@ -107,21 +91,14 @@ def main():
         text_desc = st.text_area("Describe your feature", height=160)
     with tabs[1]:
         uploaded_files = st.file_uploader(
-            "Upload wireframes / mockups",
-            accept_multiple_files=True,
-            type=["png", "jpg", "jpeg", "pdf"]
+            "Upload wireframes / mockups", accept_multiple_files=True, type=["png", "jpg", "jpeg", "pdf"]
         )
 
-    feature_inputs = {
-        "Text": text_desc or "",
-        "Files": [f.name for f in (uploaded_files or [])]
-    }
+    feature_inputs = {"Text": text_desc or "", "Files": [f.name for f in (uploaded_files or [])]}
 
     st.markdown("---")
 
-    # -------------------------
     # Persona selection
-    # -------------------------
     st.header("👥 Choose Personas")
     if not personas:
         st.warning("No personas available.")
@@ -132,9 +109,7 @@ def main():
         selected_labels = st.multiselect("Select personas:", labels, default=defaults)
         selected_personas = [p for p in personas if f"{p['name']} ({p.get('occupation','')})" in selected_labels]
 
-    # -------------------------
-    # Ask / Report / Clear controls
-    # -------------------------
+    # Ask / Report / Clear
     st.header("💭 Ask Your Question")
     question = st.text_input("Question to personas")
     c1, c2, c3 = st.columns([2, 2, 1])
@@ -154,13 +129,12 @@ def main():
                 st.session_state.conversation_history += f"\n**User:** {question}\n"
             with st.spinner("Generating persona responses..."):
                 try:
-                    resp = generate_persona_responses_internal(
-                        feature_inputs,
-                        selected_personas,
-                        st.session_state.conversation_history,
-                        model_choice
-                    )
-                    st.session_state.conversation_history += resp + "\n"
+                    resp_list = generate_persona_responses(feature_inputs, selected_personas, st.session_state.conversation_history, model_choice)
+                    # append formatted lines to conversation_history
+                    for r in resp_list:
+                        name = r["name"]
+                        text = r.get("response") or ""
+                        st.session_state.conversation_history += f"\n{name}: {text}\n"
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to generate response: {e}")
@@ -184,14 +158,10 @@ def main():
 
     st.markdown("---")
 
-    # -------------------------
-    # Conversation display + heatmap
-    # -------------------------
+    # Conversation + heatmap
     st.header("💬 Conversation History")
     if st.session_state.conversation_history.strip() and selected_personas:
         lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
-
-        # Display conversation lines with persona formatting
         for line in lines:
             matched = False
             for p in selected_personas:
@@ -213,9 +183,7 @@ def main():
     else:
         st.info("No conversation yet. Ask your personas a question to get started!")
 
-    # -------------------------
-    # Sidebar persona creation (persist)
-    # -------------------------
+    # persona create
     st.sidebar.markdown("---")
     st.sidebar.header("➕ Create Persona")
     with st.sidebar.form("new_persona_form"):
@@ -235,7 +203,7 @@ def main():
                     "occupation": occupation.strip(),
                     "location": location.strip() or "Unknown",
                     "tech_proficiency": tech,
-                    "behavioral_traits": [t.strip() for t in traits.split(",") if t.strip()]
+                    "behavioral_traits": [t.strip() for t in traits.split(",") if t.strip()],
                 }
                 personas.append(new_p)
                 if save_personas(personas, path=DEFAULT_PERSONA_PATH):
@@ -247,8 +215,5 @@ def main():
     st.sidebar.metric("Total Personas", len(personas))
 
 
-# ------------------------------------------------------------
-# Ensures UI only runs when executing "streamlit run app.py"
-# ------------------------------------------------------------
 if __name__ == "__main__":
     main()
