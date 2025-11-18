@@ -1,99 +1,96 @@
-# ai_helpers.py
+import openai
+import logging
 import time
-from typing import List, Dict, Any
-import types
+from typing import List, Dict, Optional
+from config import OPENAI_DEFAULTS, REPORT_DEFAULTS
+from utils import build_sentiment_summary, extract_persona_response  # utils in same package
 
-# Try import openai if available. We'll expose a client object that tests can patch.
-try:
-    import openai
-    client = openai
-except Exception:
-    # Provide a minimal stub client so code/tests can patch app.client.responses.create
-    client = types.SimpleNamespace()
-    client.responses = types.SimpleNamespace()
-    def _stub_create(*args, **kwargs):
-        raise RuntimeError("OpenAI client not installed")
-    client.responses.create = _stub_create
+log = logging.getLogger(__name__)
 
-
-def _build_prompt(personas: List[Dict], feature_inputs: Dict[str, Any], conversation_history: str) -> str:
+def build_prompt(personas: List[Dict], feature_inputs: Dict, conversation_history: str = "") -> str:
+    """Construct a compact prompt for the chat model."""
     persona_block = "\n".join(
-        f"- {p.get('name')} ({p.get('occupation','')}, Tech: {p.get('tech_proficiency','')})"
+        f"- {p['name']} ({p['occupation']}, {p.get('location','')}, Tech: {p.get('tech_proficiency','')})"
         for p in personas
     )
     feature_block = ""
     for k, v in feature_inputs.items():
-        if isinstance(v, list):
-            feature_block += f"{k}:\n{', '.join(v)}\n\n"
-        else:
-            feature_block += f"{k}:\n{v}\n\n"
+        vtxt = ", ".join(v) if isinstance(v, list) else (v or "")
+        feature_block += f"{k}:\n{vtxt}\n\n"
+
     prompt = f"""
 Personas:
 {persona_block}
 
-Feature Inputs:
+Features:
 {feature_block}
 
-Conversation history:
-{conversation_history}
+Simulate a realistic persona conversation. Each persona should reply in 2-3 sentences.
+Use this template for each persona:
 
-Simulate one concise response per persona. For each persona output a single line in the format:
-<Persona Name>: - Response: <their 1-2 sentence response>
-Do not add extra commentary.
+[Persona Name]:
+- Response: <what they say>
+- Reasoning: <why>
+- Confidence: <High|Medium|Low>
+- Suggested follow-up: <question>
+
 """
+    if conversation_history:
+        prompt += f"\nPrevious conversation:\n{conversation_history}\nContinue naturally."
     return prompt.strip()
 
+def generate_response(feature_inputs: Dict, personas: List[Dict], history: str, model: str) -> str:
+    """Single-shot OpenAI call (may raise exceptions)."""
+    prompt = build_prompt(personas, feature_inputs, history)
+    resp = openai.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are an AI facilitator for a virtual focus group."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=OPENAI_DEFAULTS.get("temperature", 0.8),
+        max_tokens=OPENAI_DEFAULTS.get("max_tokens", 1500)
+    )
+    return resp.choices[0].message.content.strip()
 
-def generate_response_with_retry(feature_inputs: Dict, personas: List[Dict], conversation_history: str, model_choice: str, retries: int = 2, backoff: float = 1.0) -> List[Dict]:
-    """
-    Calls client.responses.create and returns list of dicts: {"persona": name, "response": text, "error": bool}
-    On failure, returns list with error True for each persona.
-    The tests patch `app.client.responses.create` so we call client.responses.create here.
-    """
-    prompt = _build_prompt(personas, feature_inputs, conversation_history)
-
-    attempt = 0
-    while True:
+def generate_response_with_retry(feature_inputs: Dict, personas: List[Dict], history: str, model: str, retries: int = 3, backoff: float = 1.0) -> str:
+    """Call OpenAI with retries and exponential backoff."""
+    for attempt in range(retries):
         try:
-            # use the same call shape tests expect to patch
-            resp = client.responses.create(model=model_choice, input=prompt)
-            # many OpenAI SDKs return text in different places; be defensive:
-            text = ""
-            if hasattr(resp, "output_text"):
-                text = resp.output_text
-            elif isinstance(resp, dict) and "output" in resp:
-                # hypothetical structure
-                text = resp["output"]
-            elif hasattr(resp, "choices") and resp.choices:
-                # classic ChatCompletion-like object used in some SDKs
-                text = resp.choices[0].message.content
-            else:
-                # fallback: string repr
-                text = str(resp)
-
-            # now split by persona lines
-            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-            outputs = []
-            for p in personas:
-                # find first line that starts with the persona name
-                found = None
-                for ln in lines:
-                    if ln.startswith(p.get("name")):
-                        found = ln
-                        break
-                if found:
-                    # extract response body after colon or "Response:"
-                    # reuse simple parsing
-                    body = found.split(":", 1)[1] if ":" in found else found
-                    outputs.append({"persona": p.get("name"), "response": body.strip(), "error": False})
-                else:
-                    # fallback: no explicit match; create an empty response
-                    outputs.append({"persona": p.get("name"), "response": "", "error": False})
-            return outputs
-
+            return generate_response(feature_inputs, personas, history, model)
         except Exception as e:
-            attempt += 1
-            if attempt > retries:
-                # return error objects for all personas so tests can assert error paths
-                return [{"persona": p.get("name"), "response": "", "error": True, "error_message": str(e)} for p in personas]
-            time.sleep(backoff * attempt)
+            log.exception("OpenAI call failed (attempt %s): %s", attempt + 1, e)
+            if attempt + 1 < retries:
+                time.sleep(backoff * (2 ** attempt))
+            else:
+                # final failure
+                raise
+
+def generate_feedback_report(conversation: str, model: str) -> str:
+    """Generate a structured feedback report using OpenAI."""
+    prompt = f"""
+Analyze the following conversation and create a structured feedback report.
+
+Conversation:
+{conversation}
+
+Sections:
+- Executive Summary
+- Patterns & Themes
+- Consensus Points
+- Disagreements & Concerns
+- Persona Insights
+- Actionable Recommendations
+- Quantitative Metrics (acceptance %, likelihood per persona, priority)
+- Risk Assessment
+"""
+    resp = openai.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are an expert product analyst and UX researcher."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=REPORT_DEFAULTS.get("temperature", 0.7),
+        max_tokens=REPORT_DEFAULTS.get("max_tokens", 1500)
+    )
+    return resp.choices[0].message.content
