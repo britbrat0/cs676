@@ -2,6 +2,8 @@ import streamlit as st
 import os
 from typing import List, Dict
 import json
+import re
+
 
 from config import MODEL_CHOICES, DEFAULT_MODEL, DEFAULT_PERSONA_PATH
 from utils import (
@@ -149,22 +151,17 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
     debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
-    # Loop through conversation lines
     for line in lines:
         matched = False
 
-        # Normalize persona markdown names
-        clean_line = re.sub(
-            r'^\*{1,3}\s*(.+?)\s*\*{1,3}:',
-            r'\1:',
-            line
-        )
+        # Normalize persona markdown names: "**Name**:" → "Name:"
+        clean_line = re.sub(r'^\*+\s*(.*?)\s*\*+\s*:', r'\1:', line).strip()
 
         if debug_mode:
             debug_container.write(f"**Raw Line:** `{line}`")
             debug_container.write(f"**Normalized Line:** `{clean_line}`")
 
-        # Persona matching
+        # Check if the line starts with any selected persona name
         for p in selected_personas:
             persona_name = p["name"]
             is_match = clean_line.startswith(persona_name)
@@ -175,7 +172,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
             if is_match:
                 response_text = extract_persona_response(clean_line)
                 hl = detect_insight_or_concern(response_text)
-            
+
                 if debug_mode:
                     debug_container.write(
                         f"""
@@ -184,14 +181,13 @@ if st.session_state.conversation_history.strip() and selected_personas:
                         **Highlight Category:** `{hl}`  
                         """
                     )
-            
+
                 st.markdown(
                     format_response_line(line, persona_name, hl),
                     unsafe_allow_html=True
                 )
                 matched = True
                 break
-
 
         if not matched:
             st.markdown(line)
@@ -207,6 +203,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
 
 
 
