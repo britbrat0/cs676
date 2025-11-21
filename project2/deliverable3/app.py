@@ -47,6 +47,9 @@ if api_key_input:
 else:
     st.sidebar.info("Enter OpenAI API key to enable generation.")
 
+st.sidebar.markdown("---")
+debug_mode = st.sidebar.checkbox("🐞 Enable Debug Mode", value=False)
+
 model_choice = st.sidebar.selectbox("Model", MODEL_CHOICES, index=MODEL_CHOICES.index(DEFAULT_MODEL))
 
 st.sidebar.markdown("---")
@@ -139,25 +142,45 @@ st.header("💬 Conversation History")
 if st.session_state.conversation_history.strip() and selected_personas:
     lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
 
-    # Display conversation lines with persona formatting
-    for line in lines:
-        matched = False
-        log.info(f"[LINE] raw conversation line = {line}")
+debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
-        for p in selected_personas:
-            if line.startswith(p["name"]):
-                response_text = extract_persona_response(line)
-                hl = detect_insight_or_concern(response_text)
-    
-                log.info(
-                    f"[PARSE] persona={p['name']} | extracted='{response_text}' | highlight={hl}"
+for line in lines:
+    matched = False
+
+    if debug_mode:
+        debug_container.write(f"**Raw Line:** `{line}`")
+
+    for p in selected_personas:
+        persona_name = p["name"]
+
+        # Check name match
+        is_match = line.startswith(persona_name)
+        if debug_mode:
+            debug_container.write(f"- Checking persona `{persona_name}` → match={is_match}")
+
+        if is_match:
+            response_text = extract_persona_response(line)
+            hl = detect_insight_or_concern(response_text)
+
+            if debug_mode:
+                debug_container.write(
+                    f"""
+                    **Matched Persona:** {persona_name}  
+                    **Extracted Text:** `{response_text}`  
+                    **Highlight Category:** `{hl}`  
+                    """
                 )
-    
-                st.markdown(format_response_line(line, p["name"], hl), unsafe_allow_html=True)
-                matched = True
-                break
-        if not matched:
-            st.markdown(line)
+
+            st.markdown(
+                format_response_line(line, persona_name, hl),
+                unsafe_allow_html=True
+            )
+            matched = True
+            break
+
+    if not matched:
+        st.markdown(line)
+
 
 
     st.info("💡 Continue the discussion using the **question field above** to ask another question.")
