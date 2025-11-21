@@ -147,65 +147,65 @@ if st.session_state.conversation_history.strip() and selected_personas:
         if ln.strip()
     ]
 
-    # Debug panel (conditionally visible)
     debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
     # Display conversation lines with persona formatting
-for line in lines:
-    matched = False
+    for line in lines:
+        matched = False
 
-    # Normalize markdown persona names: "**Sophia Martinez**:" → "Sophia Martinez:"
-    clean_line = re.sub(
-        r'^\*{1,3}\s*(.+?)\s*\*{1,3}:',
-        r'\1:',
-        line
-    )
-
-
-    if debug_mode:
-        debug_container.write(f"**Raw Line:** `{line}`")
-        debug_container.write(f"**Normalized Line:** `{clean_line}`")
-
-    for p in selected_personas:
-        persona_name = p["name"]
-
-        is_match = clean_line.startswith(persona_name)
+        # Normalize markdown persona names: "**Sophia Martinez**:" → "Sophia Martinez:"
+        clean_line = re.sub(
+            r'^\*{1,3}\s*(.+?)\s*\*{1,3}:',
+            r'\1:',
+            line
+        )
 
         if debug_mode:
-            debug_container.write(f"- Checking persona `{persona_name}` → match={is_match}")
+            debug_container.write(f"**Raw Line:** `{line}`")
+            debug_container.write(f"**Normalized Line:** `{clean_line}`")
 
-        if is_match:
-            response_text = extract_persona_response(clean_line)
-            hl = detect_insight_or_concern(response_text)
+        for p in selected_personas:
+            persona_name = p["name"]
+            is_match = clean_line.startswith(persona_name)
 
             if debug_mode:
-                debug_container.write(
-                    f"""
-                    **Matched Persona:** {persona_name}  
-                    **Extracted Text:** `{response_text}`  
-                    **Highlight Category:** `{hl}`  
-                    """
+                debug_container.write(f"- Checking persona `{persona_name}` → match={is_match}")
+
+            if is_match:
+                response_text = extract_persona_response(clean_line)
+                hl = detect_insight_or_concern(response_text)
+
+                if debug_mode:
+                    debug_container.write(
+                        f"""
+                        **Matched Persona:** {persona_name}  
+                        **Extracted Text:** `{response_text}`  
+                        **Highlight Category:** `{hl}`  
+                        """
+                    )
+
+                st.markdown(
+                    format_response_line(line, persona_name, hl),
+                    unsafe_allow_html=True
                 )
+                matched = True
+                break
 
-            st.markdown(
-                format_response_line(line, persona_name, hl),
-                unsafe_allow_html=True
-            )
-            matched = True
-            break
+        if not matched:
+            st.markdown(line)
 
-    if not matched:
-        st.markdown(line)
-
-    # Rest of your existing code stays the same:
+    # ===== Summary + Heatmap after ALL lines =====
     st.info("💡 Continue the discussion using the question field above…")
+
     df_summary = build_sentiment_summary(lines, selected_personas)
     chart = build_heatmap_chart(df_summary)
+
     st.markdown("## 🔥 Persona Sentiment Heatmap")
     st.altair_chart(chart, use_container_width=True)
 
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
 
 
 # -------------------------
