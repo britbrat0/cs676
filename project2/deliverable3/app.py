@@ -139,59 +139,67 @@ st.markdown("---")
 # Conversation display + heatmap
 # -------------------------
 st.header("💬 Conversation History")
+
 if st.session_state.conversation_history.strip() and selected_personas:
-    lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
 
-debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
+    lines = [
+        ln for ln in st.session_state.conversation_history.split("\n")
+        if ln.strip()
+    ]
 
-for line in lines:
-    matched = False
+    # Debug panel (conditionally visible)
+    debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
-    if debug_mode:
-        debug_container.write(f"**Raw Line:** `{line}`")
+    # Display conversation lines with persona formatting
+    for line in lines:
+        matched = False
 
-    for p in selected_personas:
-        persona_name = p["name"]
-
-        # Check name match
-        is_match = line.startswith(persona_name)
         if debug_mode:
-            debug_container.write(f"- Checking persona `{persona_name}` → match={is_match}")
+            debug_container.write(f"**Raw Line:** `{line}`")
 
-        if is_match:
-            response_text = extract_persona_response(line)
-            hl = detect_insight_or_concern(response_text)
+        for p in selected_personas:
+            persona_name = p["name"]
+
+            is_match = line.startswith(persona_name)
 
             if debug_mode:
                 debug_container.write(
-                    f"""
-                    **Matched Persona:** {persona_name}  
-                    **Extracted Text:** `{response_text}`  
-                    **Highlight Category:** `{hl}`  
-                    """
+                    f"- Checking persona `{persona_name}` → match={is_match}"
                 )
 
-            st.markdown(
-                format_response_line(line, persona_name, hl),
-                unsafe_allow_html=True
-            )
-            matched = True
-            break
+            if is_match:
+                response_text = extract_persona_response(line)
+                hl = detect_insight_or_concern(response_text)
 
-    if not matched:
-        st.markdown(line)
+                if debug_mode:
+                    debug_container.write(
+                        f"""
+                        **Matched Persona:** {persona_name}  
+                        **Extracted Text:** `{response_text}`  
+                        **Highlight Category:** `{hl}`  
+                        """
+                    )
 
+                st.markdown(
+                    format_response_line(line, persona_name, hl),
+                    unsafe_allow_html=True
+                )
+                matched = True
+                break
 
+        if not matched:
+            st.markdown(line)
 
-    st.info("💡 Continue the discussion using the **question field above** to ask another question.")
-
-    # Build & show heatmap
+    # Rest of your existing code stays the same:
+    st.info("💡 Continue the discussion using the question field above…")
     df_summary = build_sentiment_summary(lines, selected_personas)
     chart = build_heatmap_chart(df_summary)
     st.markdown("## 🔥 Persona Sentiment Heatmap")
     st.altair_chart(chart, use_container_width=True)
+
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
 
 # -------------------------
 # Sidebar persona creation (persist)
