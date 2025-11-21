@@ -122,12 +122,8 @@ def extract_persona_response(line: str) -> str:
 
     original = line
 
-    # Normalize markdown headers
-    line = re.sub(r'^\*+\s*(.+?)\s*\*+:', r'\1:', line)
-    # Remove leading personaName label
-    line = re.sub(r'^[A-Za-z0-9_\- ]+[:\-—]+\s*', '', line)
-    # Remove Response:
-    line = re.sub(r'^\s*(Response)\s*[:\-—]*\s*', '', line, flags=re.I)
+    # Remove leading '- Response:' (case-insensitive, optional spaces)
+    line = re.sub(r'^\s*-\s*Response\s*[:\-—]*\s*', '', line, flags=re.I)
 
     line = line.strip()
 
