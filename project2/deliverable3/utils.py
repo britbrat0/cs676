@@ -117,36 +117,38 @@ _CONCERN_PATTERN = re.compile(
 )
 
 
+def extract_persona_response(line: str) -> str:
+    log.info(f"[extract IN] {line}")
+
+    original = line
+
+    # Normalize markdown headers
+    line = re.sub(r'^\*+\s*(.+?)\s*\*+:', r'\1:', line)
+    # Remove leading personaName label
+    line = re.sub(r'^[A-Za-z0-9_\- ]+[:\-—]+\s*', '', line)
+    # Remove Response:
+    line = re.sub(r'^\s*(Response)\s*[:\-—]*\s*', '', line, flags=re.I)
+
+    line = line.strip()
+
+    log.info(f"[extract OUT] original='{original}' → extracted='{line}'")
+    return line
+
+
 def detect_insight_or_concern(text: str) -> Optional[str]:
+    log.info(f"[detect] analyzing: '{text}'")
+
     if not text:
         return None
     if _INSIGHT_PATTERN.search(text):
+        log.info("[detect] → insight")
         return "insight"
     if _CONCERN_PATTERN.search(text):
+        log.info("[detect] → concern")
         return "concern"
+
+    log.info("[detect] → none")
     return None
-
-
-def extract_persona_response(line: str) -> str:
-    """
-    Extract the persona's spoken response regardless of format.
-    Works for:
-      "Ava: Response: I think this is great"
-      "Ava - Response: love this"
-      "Ava: I think this is great"
-      "**Ava:** I think this is great"
-    """
-
-    # Normalize markdown headers: "**Ava:**" → "Ava:"
-    line = re.sub(r'^\*+\s*(.+?)\s*\*+:', r'\1:', line)
-
-    # Remove leading personaName + punctuation
-    line = re.sub(r'^[A-Za-z0-9_\- ]+[:\-—]+\s*', '', line)
-
-    # Remove optional "Response:" label
-    line = re.sub(r'^\s*(Response)\s*[:\-—]*\s*', '', line, flags=re.I)
-
-    return line.strip()
 
 
 def score_sentiment(text: str) -> int:
