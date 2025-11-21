@@ -147,26 +147,26 @@ if st.session_state.conversation_history.strip() and selected_personas:
     lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
 
     # Debug container (always created)
-    debug_container = st.expander("🔍 Debug Output", expanded=True)
+    debug_container = st.expander("🔍 Debug Output", expanded=debug_mode)
 
-    current_persona = None
+    current_persona = None  # Track which persona is speaking
+
     for line in lines:
         clean_line = line.strip()
-    
-        # 1️⃣ Detect persona header
+
+        # Detect persona header like "**Diego Alvarez:**"
         header_match = re.match(r'^\*{0,3}\s*(.*?)\s*\*{0,3}:$', clean_line)
         if header_match:
             current_persona = header_match.group(1).strip()
             if debug_mode:
                 debug_container.write(f"Detected persona header → `{current_persona}`")
-            continue  # skip the header itself
-    
-        # 2️⃣ Detect response lines
-        response_match = re.match(r'^\s*-\s*Response\s*[:\-—]?\s*(.*)$', clean_line, re.I)
-        if current_persona and response_match:
-            response_text = response_match.group(1).strip()
+            continue  # Skip header line
+
+        # If it's a response line
+        if current_persona and re.match(r'^\s*-\s*Response\s*[:\-—]', clean_line, re.I):
+            response_text = extract_persona_response(clean_line)
             hl = detect_insight_or_concern(response_text)
-    
+
             if debug_mode:
                 debug_container.write(
                     f"**Current Persona:** `{current_persona}`  \n"
@@ -174,13 +174,13 @@ if st.session_state.conversation_history.strip() and selected_personas:
                     f"**Extracted Text:** `{response_text}`  \n"
                     f"**Highlight:** `{hl}`"
                 )
-    
-            st.markdown(format_response_line(response_text, current_persona, hl), unsafe_allow_html=True)
-            continue
-    
-        # 3️⃣ Everything else
-        st.markdown(line)
 
+            # Display formatted line with highlight
+            st.markdown(format_response_line(line, current_persona, hl), unsafe_allow_html=True)
+
+        else:
+            # Display other lines normally
+            st.markdown(line)
 
     # ===== Summary + Heatmap Section =====
     st.info("💡 Continue the discussion using the question field above…")
@@ -193,9 +193,6 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
-
-
-
 
 
 # -------------------------
