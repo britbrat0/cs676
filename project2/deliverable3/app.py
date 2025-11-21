@@ -151,7 +151,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
     debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
     # Display conversation lines with persona formatting
-    for line in lines:
+for line in lines:
     matched = False
 
     # Normalize markdown persona names: "**Sophia Martinez**:" → "Sophia Martinez:"
