@@ -1,7 +1,3 @@
-# app.py
-import logging
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-
 import streamlit as st
 import os
 from typing import List, Dict
@@ -18,6 +14,15 @@ from utils import (
     save_personas,
 )
 from ai_helpers import generate_response_with_retry, generate_feedback_report
+
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+log = logging.getLogger(__name__)
+
 
 # -------------------------
 # Page config & state
