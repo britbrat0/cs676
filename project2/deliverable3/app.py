@@ -149,8 +149,9 @@ if st.session_state.conversation_history.strip() and selected_personas:
     # Debug container
     debug_container = st.expander("🔍 Debug Output", expanded=debug_mode)
 
-    buffer_lines: List[str] = []
-    current_persona: Optional[str] = None
+    current_persona = None
+    buffer_lines = []
+
 
     def flush_buffer(persona: str, lines_buffer: List[str]):
         """Display collected lines for a persona, applying highlights."""
