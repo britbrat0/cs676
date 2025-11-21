@@ -175,7 +175,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
             if is_match:
                 response_text = extract_persona_response(clean_line)
                 hl = detect_insight_or_concern(response_text)
-
+            
                 if debug_mode:
                     debug_container.write(
                         f"""
@@ -184,13 +184,14 @@ if st.session_state.conversation_history.strip() and selected_personas:
                         **Highlight Category:** `{hl}`  
                         """
                     )
-
+            
                 st.markdown(
                     format_response_line(line, persona_name, hl),
                     unsafe_allow_html=True
                 )
                 matched = True
                 break
+
 
         if not matched:
             st.markdown(line)
