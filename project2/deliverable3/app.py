@@ -155,7 +155,12 @@ for line in lines:
     matched = False
 
     # Normalize markdown persona names: "**Sophia Martinez**:" → "Sophia Martinez:"
-    clean_line = re.sub(r'^\*{1,3}\s*(.+?)\s*\*{1,3}:', r'\1:', line)
+    clean_line = re.sub(
+        r'^\*{1,3}\s*(.+?)\s*\*{1,3}:',
+        r'\1:',
+        line
+    )
+
 
     if debug_mode:
         debug_container.write(f"**Raw Line:** `{line}`")
