@@ -122,7 +122,7 @@ def extract_persona_response(line: str) -> str:
 
     original = line
 
-    # Remove leading '- Response:' (case-insensitive, optional spaces)
+    # Remove leading '- Response:' (optional spaces/dashes)
     line = re.sub(r'^\s*-\s*Response\s*[:\-—]*\s*', '', line, flags=re.I)
 
     line = line.strip()
