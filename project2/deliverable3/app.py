@@ -144,45 +144,42 @@ st.header("💬 Conversation History")
 
 if st.session_state.conversation_history.strip() and selected_personas:
 
-    # Split into non-empty lines
     lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
+
+    # Debug container
     debug_container = st.expander("🔍 Debug Output", expanded=debug_mode)
 
-    current_persona = None
-    buffer_lines = []  # Collect lines for a persona block
+    buffer_lines: List[str] = []
+    current_persona: Optional[str] = None
 
-    def flush_buffer():
-        """Display accumulated lines for current persona with highlights."""
-        nonlocal buffer_lines, current_persona
-        if not current_persona or not buffer_lines:
+    def flush_buffer(persona: str, lines_buffer: List[str]):
+        """Display collected lines for a persona, applying highlights."""
+        if not persona or not lines_buffer:
             return
-        full_text = "\n".join(buffer_lines)
-        # Detect highlights only in lines starting with '- Response:'
-        for l in buffer_lines:
+        for l in lines_buffer:
             if l.lower().startswith("- response"):
                 response_text = extract_persona_response(l)
                 hl = detect_insight_or_concern(response_text)
-                st.markdown(format_response_line(response_text, current_persona, hl), unsafe_allow_html=True)
+                st.markdown(format_response_line(response_text, persona, hl), unsafe_allow_html=True)
                 if debug_mode:
                     debug_container.write(
-                        f"**Current Persona:** `{current_persona}`  \n"
+                        f"**Current Persona:** `{persona}`  \n"
                         f"**Raw Line:** `{l}`  \n"
                         f"**Extracted Text:** `{response_text}`  \n"
                         f"**Highlight:** `{hl}`"
                     )
             else:
-                # Other lines (reasoning, confidence, follow-up)
                 st.markdown(f"<div style='margin-left:16px;'>{l}</div>", unsafe_allow_html=True)
-        buffer_lines = []
+        lines_buffer.clear()
 
     for line in lines:
         clean_line = line.strip()
 
         # Detect persona header lines like "**Diego Alvarez:**"
-        header_match = re.match(r'^\*+\s*(.+?)\s*\*+:$', clean_line)
+        header_match = re.match(r'^\*{0,3}\s*(.*?)\s*\*{0,3}:$', clean_line)
         if header_match:
-            # Flush previous persona block
-            flush_buffer()
+            # Flush previous persona's buffered lines
+            flush_buffer(current_persona, buffer_lines)
             current_persona = header_match.group(1).strip()
             if debug_mode:
                 debug_container.write(f"Detected persona header → `{current_persona}`")
@@ -191,11 +188,11 @@ if st.session_state.conversation_history.strip() and selected_personas:
         if current_persona:
             buffer_lines.append(clean_line)
         else:
-            # Lines outside persona blocks (e.g., user messages)
-            st.markdown(line)
+            # Lines not under a persona (e.g., user lines)
+            st.markdown(clean_line)
 
-    # Flush the last persona block
-    flush_buffer()
+    # Flush any remaining buffered lines
+    flush_buffer(current_persona, buffer_lines)
 
     # ===== Summary + Heatmap Section =====
     st.info("💡 Continue the discussion using the question field above…")
