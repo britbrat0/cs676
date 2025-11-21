@@ -134,15 +134,23 @@ if st.session_state.conversation_history.strip() and selected_personas:
     # Display conversation lines with persona formatting
     for line in lines:
         matched = False
+        log.info(f"[LINE] raw conversation line = {line}")
+
         for p in selected_personas:
             if line.startswith(p["name"]):
                 response_text = extract_persona_response(line)
                 hl = detect_insight_or_concern(response_text)
+    
+                log.info(
+                    f"[PARSE] persona={p['name']} | extracted='{response_text}' | highlight={hl}"
+                )
+    
                 st.markdown(format_response_line(line, p["name"], hl), unsafe_allow_html=True)
                 matched = True
                 break
         if not matched:
             st.markdown(line)
+
 
     st.info("💡 Continue the discussion using the **question field above** to ask another question.")
 
