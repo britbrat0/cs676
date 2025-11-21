@@ -149,11 +149,11 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
     debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
-    # Display conversation lines with persona formatting
+    # Loop through conversation lines
     for line in lines:
         matched = False
 
-        # Normalize markdown persona names: "**Sophia Martinez**:" → "Sophia Martinez:"
+        # Normalize persona markdown names
         clean_line = re.sub(
             r'^\*{1,3}\s*(.+?)\s*\*{1,3}:',
             r'\1:',
@@ -164,6 +164,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
             debug_container.write(f"**Raw Line:** `{line}`")
             debug_container.write(f"**Normalized Line:** `{clean_line}`")
 
+        # Persona matching
         for p in selected_personas:
             persona_name = p["name"]
             is_match = clean_line.startswith(persona_name)
@@ -194,7 +195,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
         if not matched:
             st.markdown(line)
 
-    # ===== Summary + Heatmap after ALL lines =====
+    # ===== Summary + Heatmap Section =====
     st.info("💡 Continue the discussion using the question field above…")
 
     df_summary = build_sentiment_summary(lines, selected_personas)
@@ -205,6 +206,7 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
 
 
 
