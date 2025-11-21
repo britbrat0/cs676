@@ -1,4 +1,7 @@
 # app.py
+import logging
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
 import streamlit as st
 import os
 from typing import List, Dict
