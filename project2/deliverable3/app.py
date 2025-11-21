@@ -144,52 +144,41 @@ st.header("💬 Conversation History")
 
 if st.session_state.conversation_history.strip() and selected_personas:
 
-    lines = [
-        ln for ln in st.session_state.conversation_history.split("\n")
-        if ln.strip()
-    ]
-
+    lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
     debug_container = st.expander("🔍 Debug Output", expanded=False) if debug_mode else None
 
+    current_persona = None  # Track whose response we are on
+
     for line in lines:
-        matched = False
+        clean_line = line.strip()
 
-        # Normalize persona markdown names: "**Name**:" → "Name:"
-        clean_line = re.sub(r'^\*+\s*(.*?)\s*\*+\s*:', r'\1:', line).strip()
+        # Check if this line is a persona header: "**Name:**" or "Name:"
+        header_match = re.match(r'^\*{0,3}\s*(.*?)\s*\*{0,3}:$', clean_line)
+        if header_match:
+            current_persona = header_match.group(1).strip()
+            if debug_mode:
+                debug_container.write(f"Detected persona header → `{current_persona}`")
+            continue  # Skip header line from display
 
-        if debug_mode:
-            debug_container.write(f"**Raw Line:** `{line}`")
-            debug_container.write(f"**Normalized Line:** `{clean_line}`")
-
-        # Check if the line starts with any selected persona name
-        for p in selected_personas:
-            persona_name = p["name"]
-            is_match = clean_line.startswith(persona_name)
+        # Only attempt highlight if current_persona is set and line looks like a response
+        if current_persona and any(line.lower().startswith(prefix) for prefix in ["- response", "response"]):
+            response_text = extract_persona_response(clean_line)
+            hl = detect_insight_or_concern(response_text)
 
             if debug_mode:
-                debug_container.write(f"- Checking persona `{persona_name}` → match={is_match}")
-
-            if is_match:
-                response_text = extract_persona_response(clean_line)
-                hl = detect_insight_or_concern(response_text)
-
-                if debug_mode:
-                    debug_container.write(
-                        f"""
-                        **Matched Persona:** {persona_name}  
-                        **Extracted Text:** `{response_text}`  
-                        **Highlight Category:** `{hl}`  
-                        """
-                    )
-
-                st.markdown(
-                    format_response_line(line, persona_name, hl),
-                    unsafe_allow_html=True
+                debug_container.write(
+                    f"**Current Persona:** {current_persona}  \n"
+                    f"**Raw Line:** `{line}`  \n"
+                    f"**Extracted Text:** `{response_text}`  \n"
+                    f"**Highlight:** `{hl}`"
                 )
-                matched = True
-                break
 
-        if not matched:
+            st.markdown(
+                format_response_line(line, current_persona, hl),
+                unsafe_allow_html=True
+            )
+        else:
+            # Default display for user lines, reasoning, confidence, etc.
             st.markdown(line)
 
     # ===== Summary + Heatmap Section =====
@@ -203,9 +192,6 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
-
-
-
 
 
 # -------------------------
