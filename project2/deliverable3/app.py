@@ -146,50 +146,49 @@ if st.session_state.conversation_history.strip() and selected_personas:
 
     lines = [ln for ln in st.session_state.conversation_history.split("\n") if ln.strip()]
 
-    # Always create container (even if debug is off)
     debug_container = st.expander("🔍 Debug Output", expanded=debug_mode)
 
-    current_persona = None  # Track which persona is speaking
+    current_persona = None
 
     for line in lines:
         clean_line = line.strip()
 
-        # Detect persona header lines like "**Diego Alvarez:**"
+        # Detect persona headers like "**Diego Alvarez:**"
         header_match = re.match(r'^\*{0,3}\s*(.*?)\s*\*{0,3}:$', clean_line)
         if header_match:
             current_persona = header_match.group(1).strip()
-            debug_container.write(f"Detected persona header → `{current_persona}`")
-            continue  # Skip header line
+            if debug_mode:
+                debug_container.write(f"Detected persona header → `{current_persona}`")
+            continue
 
-        # If current_persona is set and line looks like a response
-        if current_persona and re.match(r'^-?\s*Response[:\-]', clean_line, re.I):
+        # Detect Response lines
+        if current_persona and re.match(r'^-?\s*Response\s*[:\-]', clean_line, re.I):
             response_text = extract_persona_response(clean_line)
             hl = detect_insight_or_concern(response_text)
 
-            debug_container.write(
-                f"**Current Persona:** {current_persona}  \n"
-                f"**Raw Line:** `{line}`  \n"
-                f"**Extracted Text:** `{response_text}`  \n"
-                f"**Highlight:** `{hl}`"
-            )
+            if debug_mode:
+                debug_container.write(
+                    f"**Current Persona:** {current_persona}  \n"
+                    f"**Raw Line:** `{line}`  \n"
+                    f"**Extracted Text:** `{response_text}`  \n"
+                    f"**Highlight:** `{hl}`"
+                )
 
             st.markdown(format_response_line(line, current_persona, hl), unsafe_allow_html=True)
-
         else:
-            # Display user lines, reasoning, confidence normally
+            # Non-response lines (reasoning, confidence, user input)
             st.markdown(line)
 
-    # ===== Summary + Heatmap Section =====
+    # ===== Summary + Heatmap =====
     st.info("💡 Continue the discussion using the question field above…")
-
     df_summary = build_sentiment_summary(lines, selected_personas)
     chart = build_heatmap_chart(df_summary)
-
     st.markdown("## 🔥 Persona Sentiment Heatmap")
     st.altair_chart(chart, use_container_width=True)
 
 else:
     st.info("💡 No conversation yet. Ask your personas a question to get started!")
+
 
 
 
