@@ -10,23 +10,32 @@ import pandas as pd
 import numpy as np
 
 def train_model(df, target, task_type, model_name, params=None):
+    """
+    Train a ML model with optional hyperparameter overrides.
+    
+    df: DataFrame
+    target: str, target column
+    task_type: 'classification' or 'regression'
+    model_name: string name of model
+    params: dict of hyperparameters to override
+    """
     X = df.drop(columns=[target])
     y = df[target]
 
-    # Fill missing numeric values with median
-    X_numeric = X.select_dtypes(include=[np.number])
+    # ---- Handle missing values ----
+    X_numeric = X.select_dtypes(include=[np.number]).copy()
     X_numeric = X_numeric.fillna(X_numeric.median())
 
-    # Fill missing categorical values with a placeholder
-    X_categorical = X.select_dtypes(include=["object", "category"]).fillna("missing")
+    X_categorical = X.select_dtypes(include=["object", "category"]).copy()
+    X_categorical = X_categorical.fillna("missing")
 
-    # Build preprocessor
+    # ---- Preprocessing ----
     preprocessor = ColumnTransformer([
         ("num", StandardScaler(), X_numeric.columns),
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse=False), X_categorical.columns)
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), X_categorical.columns)
     ], remainder="drop")
 
-    # Select model
+    # ---- Model selection ----
     if model_name == "Logistic Regression":
         model = LogisticRegression(max_iter=1000)
         metric = "accuracy"
@@ -51,31 +60,36 @@ def train_model(df, target, task_type, model_name, params=None):
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
-    # Apply hyperparameter overrides
+    # ---- Apply hyperparameter overrides ----
     if params:
         # Convert True/False strings to bool
         for k, v in params.items():
-            if v in ["True", "False"]:
+            if isinstance(v, str) and v in ["True", "False"]:
                 params[k] = v == "True"
         model.set_params(**params)
 
-    # Build pipeline
+    # ---- Build pipeline ----
     pipeline = Pipeline([
         ("preprocessor", preprocessor),
         ("model", model)
     ])
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # ---- Train/Test Split ----
+    X_train, X_test, y_train, y_test = train_test_split(
+        pd.concat([X_numeric, X_categorical], axis=1),
+        y,
+        test_size=0.2,
+        random_state=42
+    )
 
-    # Train
+    # ---- Train ----
     pipeline.fit(X_train, y_train)
 
-    # Predict & evaluate
+    # ---- Evaluate ----
     y_pred = pipeline.predict(X_test)
     if metric == "accuracy":
         score = accuracy_score(y_test, y_pred)
     else:
         score = r2_score(y_test, y_pred)
 
-    return {metric: score}
+    return
