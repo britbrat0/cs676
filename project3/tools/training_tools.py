@@ -1,3 +1,5 @@
+# tools/training_tools.py
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -7,11 +9,23 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-import streamlit as st
-
 
 
 def train_model(df, target, task_type, model_name):
+    """
+    Train a machine learning model on the given dataset.
+
+    Parameters:
+    - df: pandas DataFrame
+    - target: str, name of the target column
+    - task_type: str, "classification" or "regression"
+    - model_name: str, name of the model to train
+
+    Returns:
+    - dict: {metric_name: value} (accuracy or r2)
+    """
+
+    # Split features and target
     X = df.drop(columns=[target])
     y = df[target]
 
@@ -19,21 +33,22 @@ def train_model(df, target, task_type, model_name):
     categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
     numeric_cols = X.select_dtypes(include=["number"]).columns.tolist()
 
-    # Force categoricals to string
+    # Force categorical columns to string
     for col in categorical_cols:
         X[col] = X[col].astype(str)
 
-    # Simple imputers
+    # Imputers
     numeric_imputer = SimpleImputer(strategy="mean")
     categorical_imputer = SimpleImputer(strategy="constant", fill_value="missing")
 
+    # Build transformers
     transformers = []
 
     if categorical_cols:
         transformers.append(
             ("cat", Pipeline([
                 ("imputer", categorical_imputer),
-                ("onehot", OneHotEncoder(handle_unknown="ignore"))
+                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=False))
             ]), categorical_cols)
         )
 
@@ -47,7 +62,7 @@ def train_model(df, target, task_type, model_name):
     # Select model
     metric = None
     if model_name == "Logistic Regression":
-        model = LogisticRegression(max_iter=1000)
+        model = LogisticRegression(max_iter=1000, solver="saga")
         metric = "accuracy"
     elif model_name == "Random Forest":
         model = RandomForestClassifier(n_estimators=200, random_state=42)
@@ -73,19 +88,18 @@ def train_model(df, target, task_type, model_name):
         ("model", model)
     ])
 
-    # Train/test split
-    st.write("Splitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
-     # Fit
-    st.write("Fitting pipeline...")
+    # Train model
     pipeline.fit(X_train, y_train)
 
-    st.write("Done training!")
-    
     # Predict
     preds = pipeline.predict(X_test)
 
+    # Compute metric
     if metric == "accuracy":
         return {"accuracy": accuracy_score(y_test, preds)}
     else:
