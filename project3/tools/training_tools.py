@@ -1,5 +1,3 @@
-# tools/training_tools.py
-
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
