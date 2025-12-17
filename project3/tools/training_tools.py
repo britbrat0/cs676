@@ -7,6 +7,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
+import streamlit as st
+
 
 
 def train_model(df, target, task_type, model_name):
