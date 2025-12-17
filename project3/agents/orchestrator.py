@@ -75,7 +75,3 @@ for model in models:
             f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
             "Would you like to try another model or tune this one?"
         )
-
-
-    return "Tell me what you'd like to do next."
-
