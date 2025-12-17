@@ -7,6 +7,7 @@ from tools.data_tools import inspect_dataset
 from tools.model_tools import recommend_models
 from tools.training_tools import train_model
 
+
 # Lazy OpenAI client
 def get_client():
     return OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
@@ -63,8 +64,10 @@ def run_agent(user_input: str):
     else:
         df_sample = df
 
+    user_input_lower = user_input.lower()
+
     # Compare all models if user types 'compare all'
-    if "compare all" in user_input.lower():
+    if "compare all" in user_input_lower:
         st.info(f"Training all recommended models on {df_sample.shape[0]} rows...")
         results_list = []
 
@@ -90,23 +93,29 @@ def run_agent(user_input: str):
         # Display results as a table
         results_df = pd.DataFrame(results_list)
         st.table(results_df)
+
+        # Keep last_model as None, user can pick a model next
         st.session_state.last_model = None
         return "Here is the comparison of all recommended models."
 
-    # Determine which model to train
-    if st.session_state.last_model and any(
-        word in user_input.lower() for word in ["tune", "this one", "it"]
-    ):
-        model_to_train = st.session_state.last_model
+    # ---- Determine which model to train ----
+    if "tune" in user_input_lower:
+        # Train last model if tuning
+        if st.session_state.last_model:
+            model_to_train = st.session_state.last_model
+        else:
+            return "⚠️ No model has been trained yet to tune. Please select a model first."
     else:
+        # Check if input matches a recommended model
         model_to_train = None
         for model in models:
-            if model.lower() in user_input.lower():
+            if model.lower() in user_input_lower:
                 model_to_train = model
                 break
         if model_to_train is None:
             return "Please select a valid model from the recommended list, or type 'compare all'."
 
+    # ---- Train the selected model ----
     try:
         st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
         results = train_model(
