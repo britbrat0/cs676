@@ -22,8 +22,7 @@ def parse_hyperparameters(user_input: str):
 
 def get_tuning_presets(model_name: str):
     """
-    Return a simple preset hyperparameter tuning dictionary
-    for automatic tuning if user just types 'tune it'.
+    Return simple preset hyperparameters for automatic tuning.
     """
     presets = {}
     if model_name in ["Ridge", "Lasso"]:
@@ -102,7 +101,12 @@ def run_agent(user_input: str):
     if "tune" in user_input_lower or params:
         if st.session_state.last_model:
             model_to_train = st.session_state.last_model
-            # If no hyperparameters were parsed, use automatic tuning presets
+
+            # Linear Regression cannot be tuned
+            if model_to_train == "Linear Regression":
+                return "⚠️ Linear Regression has no hyperparameters to tune. Please try Ridge or Lasso instead."
+
+            # Apply hyperparameters from input or presets
             if not params:
                 params = get_tuning_presets(model_to_train)
                 if not params:
