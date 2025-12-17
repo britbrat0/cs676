@@ -1,6 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import pandas as pd
+import re
 
 from agents.prompts import SYSTEM_PROMPT
 from tools.data_tools import inspect_dataset
@@ -142,3 +143,20 @@ def run_agent(user_input: str):
         f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
         "Would you like to try another model, tune this one, or type 'compare all' to compare all recommended models?"
     )
+
+
+def parse_hyperparameters(user_input: str):
+    """
+    Parse simple hyperparameters from user input, e.g.,
+    "tune it with n_estimators=500 max_depth=10" -> {"n_estimators":500, "max_depth":10}
+    """
+    pattern = r"(\w+)\s*=\s*([\d.]+)"
+    matches = re.findall(pattern, user_input)
+    params = {}
+    for key, value in matches:
+        if "." in value:
+            params[key] = float(value)
+        else:
+            params[key] = int(value)
+    return params
+
