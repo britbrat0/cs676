@@ -25,6 +25,7 @@ def run_agent(user_input: str):
     if df is None:
         return "Please upload a dataset first."
 
+    # Initialize session state
     if "target" not in st.session_state:
         st.session_state.target = None
     if "task_type" not in st.session_state:
@@ -32,7 +33,7 @@ def run_agent(user_input: str):
     if "last_model" not in st.session_state:
         st.session_state.last_model = None
 
-    # STEP 1: Target selection
+    # ---- STEP 1: TARGET SELECTION ----
     if st.session_state.target is None:
         if user_input in df.columns:
             st.session_state.target = user_input
@@ -53,8 +54,10 @@ def run_agent(user_input: str):
             )
         return f"Which column would you like to predict?\n\nAvailable columns:\n{', '.join(df.columns)}"
 
-    # STEP 2: Model training / tuning
+    # ---- STEP 2: MODEL TRAINING OR TUNING ----
     models = recommend_models(st.session_state.task_type)
+
+    # Sample large datasets to prevent freezing
     if df.shape[0] > 5000:
         df_sample = df.sample(5000, random_state=42)
     else:
@@ -94,12 +97,14 @@ def run_agent(user_input: str):
         if model_to_train is None:
             return "Please select a valid model from the recommended list, or type 'compare all'."
 
+    # ---- Train the selected model ----
     try:
         st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
         results = train_model(df_sample, st.session_state.target, st.session_state.task_type, model_to_train, params=params)
     except Exception as e:
         return f"⚠️ **Training failed for {model_to_train}.**\n\nError: `{str(e)}`\n\nThis usually means the dataset needs preprocessing or the target column is incompatible with this model."
 
+    # Save last model for tuning
     st.session_state.last_model = model_to_train
     metric_name = list(results.keys())[0]
 
