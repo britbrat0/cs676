@@ -1,5 +1,4 @@
 import streamlit as st
-from openai import OpenAI
 import pandas as pd
 import re
 
@@ -9,9 +8,20 @@ from tools.model_tools import recommend_models
 from tools.training_tools import train_model
 
 
-# Lazy OpenAI client
-def get_client():
-    return OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
+def parse_hyperparameters(user_input: str):
+    """
+    Parse simple hyperparameters from user input, e.g.,
+    "tune it with n_estimators=500 max_depth=10" -> {"n_estimators":500, "max_depth":10}
+    """
+    pattern = r"(\w+)\s*=\s*([\d.]+)"
+    matches = re.findall(pattern, user_input)
+    params = {}
+    for key, value in matches:
+        if "." in value:
+            params[key] = float(value)
+        else:
+            params[key] = int(value)
+    return params
 
 
 def run_agent(user_input: str):
@@ -67,7 +77,7 @@ def run_agent(user_input: str):
 
     user_input_lower = user_input.lower()
 
-    # Compare all models if user types 'compare all'
+    # Compare all models
     if "compare all" in user_input_lower:
         st.info(f"Training all recommended models on {df_sample.shape[0]} rows...")
         results_list = []
@@ -91,23 +101,22 @@ def run_agent(user_input: str):
                     "Error": str(e)
                 })
 
-        # Display results as a table
         results_df = pd.DataFrame(results_list)
         st.table(results_df)
 
-        # Keep last_model as None, user can pick a model next
         st.session_state.last_model = None
         return "Here is the comparison of all recommended models."
 
     # ---- Determine which model to train ----
+    params = None
+
     if "tune" in user_input_lower:
-        # Train last model if tuning
         if st.session_state.last_model:
             model_to_train = st.session_state.last_model
+            params = parse_hyperparameters(user_input)
         else:
             return "⚠️ No model has been trained yet to tune. Please select a model first."
     else:
-        # Check if input matches a recommended model
         model_to_train = None
         for model in models:
             if model.lower() in user_input_lower:
@@ -123,7 +132,8 @@ def run_agent(user_input: str):
             df_sample,
             st.session_state.target,
             st.session_state.task_type,
-            model_to_train
+            model_to_train,
+            params=params
         )
     except Exception as e:
         return (
@@ -143,20 +153,3 @@ def run_agent(user_input: str):
         f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
         "Would you like to try another model, tune this one, or type 'compare all' to compare all recommended models?"
     )
-
-
-def parse_hyperparameters(user_input: str):
-    """
-    Parse simple hyperparameters from user input, e.g.,
-    "tune it with n_estimators=500 max_depth=10" -> {"n_estimators":500, "max_depth":10}
-    """
-    pattern = r"(\w+)\s*=\s*([\d.]+)"
-    matches = re.findall(pattern, user_input)
-    params = {}
-    for key, value in matches:
-        if "." in value:
-            params[key] = float(value)
-        else:
-            params[key] = int(value)
-    return params
-
