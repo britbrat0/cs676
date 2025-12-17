@@ -1,77 +1,98 @@
+# tools/training_tools.py
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, LinearRegression
+from xgboost import XGBClassifier, XGBRegressor
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from xgboost import XGBClassifier, XGBRegressor
 
 
 def train_model(df, target, task_type, model_name):
+    """
+    Train a machine learning model on the given dataset.
+
+    Parameters:
+    - df: pandas DataFrame
+    - target: str, name of the target column
+    - task_type: str, "classification" or "regression"
+    - model_name: str, name of the model to train
+
+    Returns:
+    - dict: {metric_name: value} (accuracy or r2)
+    """
+
+    # Split features and target
     X = df.drop(columns=[target])
     y = df[target]
 
-    # Identify column types
+    # Identify categorical and numeric columns
     categorical_cols = X.select_dtypes(include=["object", "category"]).columns
     numeric_cols = X.select_dtypes(include=["number"]).columns
-    
-    # Force categorical columns to string to avoid mixed types
+
+    # Force categorical columns to string
     for col in categorical_cols:
         X[col] = X[col].astype(str)
-    
+
+    # Imputation transformers
+    numeric_imputer = SimpleImputer(strategy="mean")
+    categorical_imputer = SimpleImputer(strategy="constant", fill_value="missing")
+
+    # Preprocessing pipeline
     preprocessor = ColumnTransformer(
         transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
-            ("num", "passthrough", numeric_cols),
+            (
+                "cat",
+                Pipeline([
+                    ("imputer", categorical_imputer),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+                ]),
+                categorical_cols
+            ),
+            ("num", numeric_imputer, numeric_cols)
         ]
     )
 
     # Select model
+    metric = None
     if model_name == "Logistic Regression":
         model = LogisticRegression(max_iter=1000)
         metric = "accuracy"
-
-    elif model_name == "XGBoost":
-        model = XGBClassifier(eval_metric="logloss", use_label_encoder=False)
-        metric = "accuracy"
-
-    elif model_name == "XGBoost Regressor":
-        model = XGBRegressor()
-        metric = "r2"
-
     elif model_name == "Random Forest":
         model = RandomForestClassifier(n_estimators=200, random_state=42)
         metric = "accuracy"
-
+    elif model_name == "XGBoost":
+        model = XGBClassifier(eval_metric="logloss", use_label_encoder=False)
+        metric = "accuracy"
     elif model_name == "Linear Regression":
         model = LinearRegression()
         metric = "r2"
-
     elif model_name == "Random Forest Regressor":
         model = RandomForestRegressor(n_estimators=200, random_state=42)
         metric = "r2"
-
+    elif model_name == "XGBoost Regressor":
+        model = XGBRegressor()
+        metric = "r2"
     else:
-        raise ValueError("Unsupported model")
+        raise ValueError(f"Unsupported model: {model_name}")
 
-    # Build pipeline
-    pipeline = Pipeline(
-        steps=[
-            ("preprocessor", preprocessor),
-            ("model", model),
-        ]
-    )
+    # Build full pipeline
+    pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("model", model)])
 
-    # Train / test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+    # Train
     pipeline.fit(X_train, y_train)
+
+    # Predict
     preds = pipeline.predict(X_test)
 
+    # Return metric
     if metric == "accuracy":
         return {"accuracy": accuracy_score(y_test, preds)}
-
-    return {"r2": r2_score(y_test, preds)}
+    else:
+        return {"r2": r2_score(y_test, preds)}
