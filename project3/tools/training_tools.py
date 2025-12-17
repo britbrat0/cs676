@@ -8,19 +8,11 @@ from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 
-
-def train_model(df, target, task_type, model_name):
+def train_model(df, target, task_type, model_name, params=None):
     """
-    Train a machine learning model on the given dataset.
+    Train a ML model, optionally overriding default hyperparameters.
 
-    Parameters:
-    - df: pandas DataFrame
-    - target: str, name of the target column
-    - task_type: str, "classification" or "regression"
-    - model_name: str, name of the model to train
-
-    Returns:
-    - dict: {metric_name: value} (accuracy or r2)
+    params: dict of hyperparameters to override
     """
 
     # Split features and target
@@ -82,6 +74,10 @@ def train_model(df, target, task_type, model_name):
         metric = "r2"
     else:
         raise ValueError(f"Unsupported model: {model_name}")
+
+    # Override hyperparameters if provided
+    if params:
+        model.set_params(**params)
 
     # Build pipeline
     pipeline = Pipeline([
