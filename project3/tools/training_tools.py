@@ -5,6 +5,7 @@ from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier, XGBRegressor
 
 
 def train_model(df, target, task_type, model_name):
@@ -26,6 +27,14 @@ def train_model(df, target, task_type, model_name):
     if model_name == "Logistic Regression":
         model = LogisticRegression(max_iter=1000)
         metric = "accuracy"
+
+    elif model_name == "XGBoost":
+        model = XGBClassifier(eval_metric="logloss", use_label_encoder=False)
+        metric = "accuracy"
+
+    elif model_name == "XGBoost Regressor":
+        model = XGBRegressor()
+        metric = "r2"
 
     elif model_name == "Random Forest":
         model = RandomForestClassifier(n_estimators=200, random_state=42)
