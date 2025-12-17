@@ -3,7 +3,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.linear_model import LogisticRegression, Ridge, Lasso
+from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge, Lasso
 from xgboost import XGBClassifier, XGBRegressor
 from sklearn.metrics import accuracy_score, r2_score
 import pandas as pd
@@ -12,12 +12,6 @@ import numpy as np
 def train_model(df, target, task_type, model_name, params=None):
     """
     Train a ML model with optional hyperparameter overrides.
-    
-    df: DataFrame
-    target: str, target column
-    task_type: 'classification' or 'regression'
-    model_name: string name of model
-    params: dict of hyperparameters to override
     """
     X = df.drop(columns=[target])
     y = df[target]
@@ -36,15 +30,9 @@ def train_model(df, target, task_type, model_name, params=None):
     ], remainder="drop")
 
     # ---- Model selection ----
-    if model_name == "Logistic Regression":
-        model = LogisticRegression(max_iter=1000)
-        metric = "accuracy"
-    elif model_name == "Random Forest":
-        model = RandomForestClassifier(n_estimators=200, random_state=42)
-        metric = "accuracy"
-    elif model_name == "XGBoost":
-        model = XGBClassifier(eval_metric="logloss", use_label_encoder=False)
-        metric = "accuracy"
+    if model_name == "Linear Regression":
+        model = LinearRegression()
+        metric = "r2"
     elif model_name == "Ridge":
         model = Ridge(alpha=1.0)
         metric = "r2"
@@ -57,12 +45,20 @@ def train_model(df, target, task_type, model_name, params=None):
     elif model_name == "XGBoost Regressor":
         model = XGBRegressor()
         metric = "r2"
+    elif model_name == "Logistic Regression":
+        model = LogisticRegression(max_iter=1000)
+        metric = "accuracy"
+    elif model_name == "Random Forest":
+        model = RandomForestClassifier(n_estimators=200, random_state=42)
+        metric = "accuracy"
+    elif model_name == "XGBoost":
+        model = XGBClassifier(eval_metric="logloss", use_label_encoder=False)
+        metric = "accuracy"
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
     # ---- Apply hyperparameter overrides ----
     if params:
-        # Convert True/False strings to bool
         for k, v in params.items():
             if isinstance(v, str) and v in ["True", "False"]:
                 params[k] = v == "True"
@@ -75,11 +71,9 @@ def train_model(df, target, task_type, model_name, params=None):
     ])
 
     # ---- Train/Test Split ----
+    X_full = pd.concat([X_numeric, X_categorical], axis=1)
     X_train, X_test, y_train, y_test = train_test_split(
-        pd.concat([X_numeric, X_categorical], axis=1),
-        y,
-        test_size=0.2,
-        random_state=42
+        X_full, y, test_size=0.2, random_state=42
     )
 
     # ---- Train ----
@@ -92,4 +86,4 @@ def train_model(df, target, task_type, model_name, params=None):
     else:
         score = r2_score(y_test, y_pred)
 
-    return
+    return {metric: score}
