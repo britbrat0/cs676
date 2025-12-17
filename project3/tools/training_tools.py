@@ -1,12 +1,10 @@
-# tools/training_tools.py
-
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from xgboost import XGBClassifier, XGBRegressor
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 
@@ -29,6 +27,11 @@ def train_model(df, target, task_type, model_name):
     X = df.drop(columns=[target])
     y = df[target]
 
+    # Encode target if classification
+    if task_type == "classification":
+        le = LabelEncoder()
+        y = le.fit_transform(y)
+
     # Identify categorical and numeric columns
     categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
     numeric_cols = X.select_dtypes(include=["number"]).columns.tolist()
@@ -43,7 +46,6 @@ def train_model(df, target, task_type, model_name):
 
     # Build transformers
     transformers = []
-
     if categorical_cols:
         transformers.append(
             ("cat", Pipeline([
@@ -51,7 +53,6 @@ def train_model(df, target, task_type, model_name):
                 ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=False))
             ]), categorical_cols)
         )
-
     if numeric_cols:
         transformers.append(
             ("num", numeric_imputer, numeric_cols)
@@ -88,7 +89,7 @@ def train_model(df, target, task_type, model_name):
         ("model", model)
     ])
 
-    # Split data
+    # Train/test split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
