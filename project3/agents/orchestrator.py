@@ -6,9 +6,9 @@ from tools.data_tools import inspect_dataset
 from tools.model_tools import recommend_models
 from tools.training_tools import train_model
 
-# Create OpenAI client lazily inside function to avoid import-time errors
+# Lazy OpenAI client
 def get_client():
-    return OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    return OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
 
 
 def run_agent(user_input: str):
@@ -19,46 +19,47 @@ def run_agent(user_input: str):
 
     # ---- STEP 1: TARGET SELECTION ----
     if st.session_state.target is None:
-
-        # User provided a valid column
         if user_input in df.columns:
             st.session_state.target = user_input
+
+            # Auto-detect task type
+            target_dtype = df[user_input].dtype
+            if target_dtype.kind in "biufc" and df[user_input].nunique() > 20:
+                st.session_state.task_type = "regression"
+            elif target_dtype.kind in "biufc":
+                st.session_state.task_type = "regression"
+            else:
+                st.session_state.task_type = "classification"
+
+            models = recommend_models(st.session_state.task_type)
+
             return (
                 f"Great — we'll predict **{user_input}**.\n\n"
-                "Is this a **classification** or **regression** task?"
+                f"Detected task type: **{st.session_state.task_type}**.\n"
+                f"Recommended models:\n{', '.join(models)}\n\n"
+                "Which model would you like to try?"
             )
 
-        # Otherwise ask for target
         return (
             "Which column would you like to predict?\n\n"
             f"Available columns:\n{', '.join(df.columns)}"
         )
 
-    # ---- STEP 2: TASK TYPE ----
-    if st.session_state.task_type is None:
-        if "class" in user_input.lower():
-            st.session_state.task_type = "classification"
-        elif "regress" in user_input.lower():
-            st.session_state.task_type = "regression"
-        else:
-            return "Is this a **classification** or **regression** problem?"
-
-        models = recommend_models(st.session_state.task_type)
-        return (
-            f"Got it — **{st.session_state.task_type}**.\n\n"
-            "Recommended models:\n"
-            f"{', '.join(models)}\n\n"
-            "Which model would you like to try?"
-        )
-
-    # ---- STEP 3: MODEL TRAINING ----
+    # ---- STEP 2: MODEL TRAINING ----
     models = recommend_models(st.session_state.task_type)
 
     for model in models:
         if model.lower() in user_input.lower():
+            # Sample large datasets to prevent freezing
+            if df.shape[0] > 5000:
+                df_sample = df.sample(5000, random_state=42)
+            else:
+                df_sample = df
+
             try:
+                st.info(f"Training {model} on {df_sample.shape[0]} rows...")
                 results = train_model(
-                    df,
+                    df_sample,
                     st.session_state.target,
                     st.session_state.task_type,
                     model
@@ -79,5 +80,4 @@ def run_agent(user_input: str):
                 "Would you like to try another model or tune this one?"
             )
 
-    # Default fallback if no recognized model
-    return "Tell me what you'd like to do next."
+    return "Please select a valid model from the recommended list."
