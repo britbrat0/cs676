@@ -49,24 +49,33 @@ def run_agent(user_input: str):
         )
 
     # ---- STEP 3: MODEL TRAINING ----
-    models = recommend_models(st.session_state.task_type)
+models = recommend_models(st.session_state.task_type)
 
-    for model in models:
-        if model.lower() in user_input.lower():
+for model in models:
+    if model.lower() in user_input.lower():
+        try:
             results = train_model(
                 df,
                 st.session_state.target,
                 st.session_state.task_type,
                 model
             )
-
-            metric_name = list(results.keys())[0]
-
+        except Exception as e:
             return (
-                f"✅ **{model} trained successfully!**\n\n"
-                f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
-                "Would you like to try another model or tune this one?"
+                f"⚠️ **Training failed for {model}.**\n\n"
+                f"Error: `{str(e)}`\n\n"
+                "This usually means the dataset needs preprocessing "
+                "or the target column is incompatible with this model."
             )
+
+        metric_name = list(results.keys())[0]
+
+        return (
+            f"✅ **{model} trained successfully!**\n\n"
+            f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
+            "Would you like to try another model or tune this one?"
+        )
+
 
     return "Tell me what you'd like to do next."
 
