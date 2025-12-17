@@ -6,7 +6,10 @@ from tools.data_tools import inspect_dataset
 from tools.model_tools import recommend_models
 from tools.training_tools import train_model
 
-client = OpenAI()
+# Create OpenAI client lazily inside function to avoid import-time errors
+def get_client():
+    return OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
 
 def run_agent(user_input: str):
     df = st.session_state.df
@@ -49,29 +52,32 @@ def run_agent(user_input: str):
         )
 
     # ---- STEP 3: MODEL TRAINING ----
-models = recommend_models(st.session_state.task_type)
+    models = recommend_models(st.session_state.task_type)
 
-for model in models:
-    if model.lower() in user_input.lower():
-        try:
-            results = train_model(
-                df,
-                st.session_state.target,
-                st.session_state.task_type,
-                model
-            )
-        except Exception as e:
+    for model in models:
+        if model.lower() in user_input.lower():
+            try:
+                results = train_model(
+                    df,
+                    st.session_state.target,
+                    st.session_state.task_type,
+                    model
+                )
+            except Exception as e:
+                return (
+                    f"⚠️ **Training failed for {model}.**\n\n"
+                    f"Error: `{str(e)}`\n\n"
+                    "This usually means the dataset needs preprocessing "
+                    "or the target column is incompatible with this model."
+                )
+
+            metric_name = list(results.keys())[0]
+
             return (
-                f"⚠️ **Training failed for {model}.**\n\n"
-                f"Error: `{str(e)}`\n\n"
-                "This usually means the dataset needs preprocessing "
-                "or the target column is incompatible with this model."
+                f"✅ **{model} trained successfully!**\n\n"
+                f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
+                "Would you like to try another model or tune this one?"
             )
 
-        metric_name = list(results.keys())[0]
-
-        return (
-            f"✅ **{model} trained successfully!**\n\n"
-            f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
-            "Would you like to try another model or tune this one?"
-        )
+    # Default fallback if no recognized model
+    return "Tell me what you'd like to do next."
