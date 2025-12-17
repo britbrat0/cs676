@@ -66,15 +66,18 @@ def run_agent(user_input: str):
     user_input_lower = user_input.lower()
     params = None
 
-    # Compare all models
+    # Compare all models safely
     if "compare all" in user_input_lower:
         st.info(f"Training all recommended models on {df_sample.shape[0]} rows...")
         results_list = []
         for model in models:
             try:
                 res = train_model(df_sample, st.session_state.target, st.session_state.task_type, model)
-                metric_name = list(res.keys())[0]
-                results_list.append({"Model": model, metric_name: res[metric_name]})
+                if res is None:
+                    results_list.append({"Model": model, "Error": "Training returned None"})
+                else:
+                    metric_name = list(res.keys())[0]
+                    results_list.append({"Model": model, metric_name: res[metric_name]})
             except Exception as e:
                 results_list.append({"Model": model, "Error": str(e)})
         st.table(pd.DataFrame(results_list))
@@ -101,6 +104,8 @@ def run_agent(user_input: str):
     try:
         st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
         results = train_model(df_sample, st.session_state.target, st.session_state.task_type, model_to_train, params=params)
+        if results is None:
+            return f"⚠️ Training failed for {model_to_train}. No results returned."
     except Exception as e:
         return f"⚠️ **Training failed for {model_to_train}.**\n\nError: `{str(e)}`\n\nThis usually means the dataset needs preprocessing or the target column is incompatible with this model."
 
