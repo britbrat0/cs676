@@ -1,5 +1,6 @@
 import streamlit as st
 from openai import OpenAI
+import pandas as pd
 
 from agents.prompts import SYSTEM_PROMPT
 from tools.data_tools import inspect_dataset
@@ -45,7 +46,7 @@ def run_agent(user_input: str):
                 f"Great — we'll predict **{user_input}**.\n\n"
                 f"Detected task type: **{st.session_state.task_type}**.\n"
                 f"Recommended models:\n{', '.join(models)}\n\n"
-                "Which model would you like to try?"
+                "Which model would you like to try, or type 'compare all' to see a quick comparison?"
             )
 
         return (
@@ -53,8 +54,44 @@ def run_agent(user_input: str):
             f"Available columns:\n{', '.join(df.columns)}"
         )
 
-    # ---- STEP 2: MODEL TRAINING ----
+    # ---- STEP 2: MODEL TRAINING OR COMPARISON ----
     models = recommend_models(st.session_state.task_type)
+
+    # Sample large datasets to prevent freezing
+    if df.shape[0] > 5000:
+        df_sample = df.sample(5000, random_state=42)
+    else:
+        df_sample = df
+
+    # Compare all models if user types 'compare all'
+    if "compare all" in user_input.lower():
+        st.info(f"Training all recommended models on {df_sample.shape[0]} rows...")
+        results_list = []
+
+        for model in models:
+            try:
+                res = train_model(
+                    df_sample,
+                    st.session_state.target,
+                    st.session_state.task_type,
+                    model
+                )
+                metric_name = list(res.keys())[0]
+                results_list.append({
+                    "Model": model,
+                    metric_name: res[metric_name]
+                })
+            except Exception as e:
+                results_list.append({
+                    "Model": model,
+                    "Error": str(e)
+                })
+
+        # Display results as a table
+        results_df = pd.DataFrame(results_list)
+        st.table(results_df)
+        st.session_state.last_model = None
+        return "Here is the comparison of all recommended models."
 
     # Determine which model to train
     if st.session_state.last_model and any(
@@ -68,13 +105,7 @@ def run_agent(user_input: str):
                 model_to_train = model
                 break
         if model_to_train is None:
-            return "Please select a valid model from the recommended list."
-
-    # Sample large datasets to prevent freezing
-    if df.shape[0] > 5000:
-        df_sample = df.sample(5000, random_state=42)
-    else:
-        df_sample = df
+            return "Please select a valid model from the recommended list, or type 'compare all'."
 
     try:
         st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
@@ -100,5 +131,5 @@ def run_agent(user_input: str):
     return (
         f"✅ **{model_to_train} trained successfully!**\n\n"
         f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
-        "Would you like to try another model or tune this one?"
+        "Would you like to try another model, tune this one, or type 'compare all' to compare all recommended models?"
     )
