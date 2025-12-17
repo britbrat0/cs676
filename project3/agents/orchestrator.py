@@ -7,8 +7,8 @@ from tools.training_tools import train_model
 
 def parse_hyperparameters(user_input: str):
     """
-    Parse simple hyperparameters from user input, e.g.,
-    "tune it with n_estimators=500 max_depth=10" -> {"n_estimators":500, "max_depth":10}
+    Parse hyperparameters from user input, e.g.,
+    "n_estimators=500 max_depth=10" -> {"n_estimators":500, "max_depth":10}
     """
     pattern = r"(\w+)\s*=\s*([\d.]+)"
     matches = re.findall(pattern, user_input)
@@ -19,6 +19,20 @@ def parse_hyperparameters(user_input: str):
         else:
             params[key] = int(value)
     return params
+
+def get_tuning_presets(model_name: str):
+    """
+    Return a simple preset hyperparameter tuning dictionary
+    for automatic tuning if user just types 'tune it'.
+    """
+    presets = {}
+    if model_name in ["Ridge", "Lasso"]:
+        presets = {"alpha": 0.5}
+    elif model_name in ["Random Forest", "Random Forest Regressor"]:
+        presets = {"n_estimators": 300}
+    elif model_name in ["XGBoost", "XGBoost Regressor"]:
+        presets = {"n_estimators": 200, "learning_rate": 0.1}
+    return presets
 
 def run_agent(user_input: str):
     df = st.session_state.df
@@ -57,7 +71,7 @@ def run_agent(user_input: str):
     # ---- STEP 2: MODEL TRAINING OR TUNING ----
     models = recommend_models(st.session_state.task_type)
 
-    # Sample large datasets to prevent freezing
+    # Sample large datasets
     if df.shape[0] > 5000:
         df_sample = df.sample(5000, random_state=42)
     else:
@@ -66,7 +80,7 @@ def run_agent(user_input: str):
     user_input_lower = user_input.lower()
     params = None
 
-    # Compare all models safely
+    # ---- Compare all models ----
     if "compare all" in user_input_lower:
         st.info(f"Training all recommended models on {df_sample.shape[0]} rows...")
         results_list = []
@@ -84,11 +98,16 @@ def run_agent(user_input: str):
         st.session_state.last_model = None
         return "Here is the comparison of all recommended models."
 
-    # Determine which model to train
+    # ---- Determine model to train ----
     if "tune" in user_input_lower:
         if st.session_state.last_model:
             model_to_train = st.session_state.last_model
             params = parse_hyperparameters(user_input)
+            if not params:
+                # Apply automatic tuning presets
+                params = get_tuning_presets(model_to_train)
+                if not params:
+                    return f"⚠️ No hyperparameters to tune for {model_to_train}. Please specify parameters like `alpha=0.5` or `n_estimators=200`."
         else:
             return "⚠️ No model has been trained yet to tune. Please select a model first."
     else:
@@ -100,7 +119,7 @@ def run_agent(user_input: str):
         if model_to_train is None:
             return "Please select a valid model from the recommended list, or type 'compare all'."
 
-    # ---- Train the selected model ----
+    # ---- Train the model ----
     try:
         st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
         results = train_model(df_sample, st.session_state.target, st.session_state.task_type, model_to_train, params=params)
