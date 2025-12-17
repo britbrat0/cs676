@@ -2,11 +2,8 @@ import streamlit as st
 import pandas as pd
 import re
 
-from agents.prompts import SYSTEM_PROMPT
-from tools.data_tools import inspect_dataset
 from tools.model_tools import recommend_models
 from tools.training_tools import train_model
-
 
 def parse_hyperparameters(user_input: str):
     """
@@ -23,14 +20,11 @@ def parse_hyperparameters(user_input: str):
             params[key] = int(value)
     return params
 
-
 def run_agent(user_input: str):
     df = st.session_state.df
-
     if df is None:
         return "Please upload a dataset first."
 
-    # Initialize session state
     if "target" not in st.session_state:
         st.session_state.target = None
     if "task_type" not in st.session_state:
@@ -38,12 +32,10 @@ def run_agent(user_input: str):
     if "last_model" not in st.session_state:
         st.session_state.last_model = None
 
-    # ---- STEP 1: TARGET SELECTION ----
+    # STEP 1: Target selection
     if st.session_state.target is None:
         if user_input in df.columns:
             st.session_state.target = user_input
-
-            # Auto-detect task type
             target_dtype = df[user_input].dtype
             if target_dtype.kind in "biufc" and df[user_input].nunique() > 20:
                 st.session_state.task_type = "regression"
@@ -53,63 +45,40 @@ def run_agent(user_input: str):
                 st.session_state.task_type = "classification"
 
             models = recommend_models(st.session_state.task_type)
-
             return (
                 f"Great — we'll predict **{user_input}**.\n\n"
                 f"Detected task type: **{st.session_state.task_type}**.\n"
                 f"Recommended models:\n{', '.join(models)}\n\n"
                 "Which model would you like to try, or type 'compare all' to see a quick comparison?"
             )
+        return f"Which column would you like to predict?\n\nAvailable columns:\n{', '.join(df.columns)}"
 
-        return (
-            "Which column would you like to predict?\n\n"
-            f"Available columns:\n{', '.join(df.columns)}"
-        )
-
-    # ---- STEP 2: MODEL TRAINING OR COMPARISON ----
+    # STEP 2: Model training / tuning
     models = recommend_models(st.session_state.task_type)
-
-    # Sample large datasets to prevent freezing
     if df.shape[0] > 5000:
         df_sample = df.sample(5000, random_state=42)
     else:
         df_sample = df
 
     user_input_lower = user_input.lower()
+    params = None
 
     # Compare all models
     if "compare all" in user_input_lower:
         st.info(f"Training all recommended models on {df_sample.shape[0]} rows...")
         results_list = []
-
         for model in models:
             try:
-                res = train_model(
-                    df_sample,
-                    st.session_state.target,
-                    st.session_state.task_type,
-                    model
-                )
+                res = train_model(df_sample, st.session_state.target, st.session_state.task_type, model)
                 metric_name = list(res.keys())[0]
-                results_list.append({
-                    "Model": model,
-                    metric_name: res[metric_name]
-                })
+                results_list.append({"Model": model, metric_name: res[metric_name]})
             except Exception as e:
-                results_list.append({
-                    "Model": model,
-                    "Error": str(e)
-                })
-
-        results_df = pd.DataFrame(results_list)
-        st.table(results_df)
-
+                results_list.append({"Model": model, "Error": str(e)})
+        st.table(pd.DataFrame(results_list))
         st.session_state.last_model = None
         return "Here is the comparison of all recommended models."
 
-    # ---- Determine which model to train ----
-    params = None
-
+    # Determine which model to train
     if "tune" in user_input_lower:
         if st.session_state.last_model:
             model_to_train = st.session_state.last_model
@@ -125,27 +94,13 @@ def run_agent(user_input: str):
         if model_to_train is None:
             return "Please select a valid model from the recommended list, or type 'compare all'."
 
-    # ---- Train the selected model ----
     try:
         st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
-        results = train_model(
-            df_sample,
-            st.session_state.target,
-            st.session_state.task_type,
-            model_to_train,
-            params=params
-        )
+        results = train_model(df_sample, st.session_state.target, st.session_state.task_type, model_to_train, params=params)
     except Exception as e:
-        return (
-            f"⚠️ **Training failed for {model_to_train}.**\n\n"
-            f"Error: `{str(e)}`\n\n"
-            "This usually means the dataset needs preprocessing "
-            "or the target column is incompatible with this model."
-        )
+        return f"⚠️ **Training failed for {model_to_train}.**\n\nError: `{str(e)}`\n\nThis usually means the dataset needs preprocessing or the target column is incompatible with this model."
 
-    # Save last model for tuning
     st.session_state.last_model = model_to_train
-
     metric_name = list(results.keys())[0]
 
     return (
