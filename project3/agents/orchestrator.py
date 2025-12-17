@@ -78,7 +78,7 @@ def run_agent(user_input: str):
         df_sample = df
 
     user_input_lower = user_input.lower()
-    params = None
+    params = parse_hyperparameters(user_input)
 
     # ---- Compare all models ----
     if "compare all" in user_input_lower:
@@ -99,18 +99,18 @@ def run_agent(user_input: str):
         return "Here is the comparison of all recommended models."
 
     # ---- Determine model to train ----
-    if "tune" in user_input_lower:
+    if "tune" in user_input_lower or params:
         if st.session_state.last_model:
             model_to_train = st.session_state.last_model
-            params = parse_hyperparameters(user_input)
+            # If no hyperparameters were parsed, use automatic tuning presets
             if not params:
-                # Apply automatic tuning presets
                 params = get_tuning_presets(model_to_train)
                 if not params:
                     return f"⚠️ No hyperparameters to tune for {model_to_train}. Please specify parameters like `alpha=0.5` or `n_estimators=200`."
         else:
             return "⚠️ No model has been trained yet to tune. Please select a model first."
     else:
+        # Select model by name in user input
         model_to_train = None
         for model in models:
             if model.lower() in user_input_lower:
