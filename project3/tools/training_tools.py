@@ -1,3 +1,5 @@
+# tools/training_tools.py
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -50,7 +52,7 @@ def train_model(df, target, task_type, model_name):
         transformers.append(
             ("cat", Pipeline([
                 ("imputer", categorical_imputer),
-                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=False))
+                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
             ]), categorical_cols)
         )
     if numeric_cols:
