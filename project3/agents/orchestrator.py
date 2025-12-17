@@ -17,6 +17,14 @@ def run_agent(user_input: str):
     if df is None:
         return "Please upload a dataset first."
 
+    # Initialize session state
+    if "target" not in st.session_state:
+        st.session_state.target = None
+    if "task_type" not in st.session_state:
+        st.session_state.task_type = None
+    if "last_model" not in st.session_state:
+        st.session_state.last_model = None
+
     # ---- STEP 1: TARGET SELECTION ----
     if st.session_state.target is None:
         if user_input in df.columns:
@@ -48,36 +56,49 @@ def run_agent(user_input: str):
     # ---- STEP 2: MODEL TRAINING ----
     models = recommend_models(st.session_state.task_type)
 
-    for model in models:
-        if model.lower() in user_input.lower():
-            # Sample large datasets to prevent freezing
-            if df.shape[0] > 5000:
-                df_sample = df.sample(5000, random_state=42)
-            else:
-                df_sample = df
+    # Determine which model to train
+    if st.session_state.last_model and any(
+        word in user_input.lower() for word in ["tune", "this one", "it"]
+    ):
+        model_to_train = st.session_state.last_model
+    else:
+        model_to_train = None
+        for model in models:
+            if model.lower() in user_input.lower():
+                model_to_train = model
+                break
+        if model_to_train is None:
+            return "Please select a valid model from the recommended list."
 
-            try:
-                st.info(f"Training {model} on {df_sample.shape[0]} rows...")
-                results = train_model(
-                    df_sample,
-                    st.session_state.target,
-                    st.session_state.task_type,
-                    model
-                )
-            except Exception as e:
-                return (
-                    f"⚠️ **Training failed for {model}.**\n\n"
-                    f"Error: `{str(e)}`\n\n"
-                    "This usually means the dataset needs preprocessing "
-                    "or the target column is incompatible with this model."
-                )
+    # Sample large datasets to prevent freezing
+    if df.shape[0] > 5000:
+        df_sample = df.sample(5000, random_state=42)
+    else:
+        df_sample = df
 
-            metric_name = list(results.keys())[0]
+    try:
+        st.info(f"Training {model_to_train} on {df_sample.shape[0]} rows...")
+        results = train_model(
+            df_sample,
+            st.session_state.target,
+            st.session_state.task_type,
+            model_to_train
+        )
+    except Exception as e:
+        return (
+            f"⚠️ **Training failed for {model_to_train}.**\n\n"
+            f"Error: `{str(e)}`\n\n"
+            "This usually means the dataset needs preprocessing "
+            "or the target column is incompatible with this model."
+        )
 
-            return (
-                f"✅ **{model} trained successfully!**\n\n"
-                f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
-                "Would you like to try another model or tune this one?"
-            )
+    # Save last model for tuning
+    st.session_state.last_model = model_to_train
 
-    return "Please select a valid model from the recommended list."
+    metric_name = list(results.keys())[0]
+
+    return (
+        f"✅ **{model_to_train} trained successfully!**\n\n"
+        f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
+        "Would you like to try another model or tune this one?"
+    )
