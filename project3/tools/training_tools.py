@@ -8,22 +8,6 @@ from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier, XGBRegressor
 
 
-# Identify column types
-categorical_cols = X.select_dtypes(include=["object", "category"]).columns
-numeric_cols = X.select_dtypes(include=["number"]).columns
-
-# Force categorical columns to string to avoid mixed types
-for col in categorical_cols:
-    X[col] = X[col].astype(str)
-
-preprocessor = ColumnTransformer(
-    transformers=[
-        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
-        ("num", "passthrough", numeric_cols),
-    ]
-)
-
-
 def train_model(df, target, task_type, model_name):
     X = df.drop(columns=[target])
     y = df[target]
@@ -31,7 +15,11 @@ def train_model(df, target, task_type, model_name):
     # Identify column types
     categorical_cols = X.select_dtypes(include=["object", "category"]).columns
     numeric_cols = X.select_dtypes(include=["number"]).columns
-
+    
+    # Force categorical columns to string to avoid mixed types
+    for col in categorical_cols:
+        X[col] = X[col].astype(str)
+    
     preprocessor = ColumnTransformer(
         transformers=[
             ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
