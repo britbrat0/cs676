@@ -11,43 +11,44 @@ client = OpenAI()
 def run_agent(user_input: str):
     df = st.session_state.df
 
-    # If no dataset yet
     if df is None:
         return "Please upload a dataset first."
 
-    # Step 1: Inspect dataset
+    # ---- STEP 1: TARGET SELECTION ----
     if st.session_state.target is None:
-        summary = inspect_dataset(df)
 
+        # User provided a valid column
+        if user_input in df.columns:
+            st.session_state.target = user_input
+            return (
+                f"Great — we'll predict **{user_input}**.\n\n"
+                "Is this a **classification** or **regression** task?"
+            )
+
+        # Otherwise ask for target
         return (
-            f"I see a dataset with {summary['num_rows']} rows and "
-            f"{summary['num_columns']} columns.\n\n"
-            f"Columns:\n{list(summary['columns'].keys())}\n\n"
-            "Which column would you like to predict?"
+            "Which column would you like to predict?\n\n"
+            f"Available columns:\n{', '.join(df.columns)}"
         )
 
-    # Step 2: Detect target column
-    if st.session_state.target is None and user_input in df.columns:
-        st.session_state.target = user_input
-        return f"Great. '{user_input}' will be the target variable. Is this a classification or regression task?"
-
-    # Step 3: Detect task type
+    # ---- STEP 2: TASK TYPE ----
     if st.session_state.task_type is None:
         if "class" in user_input.lower():
             st.session_state.task_type = "classification"
         elif "regress" in user_input.lower():
             st.session_state.task_type = "regression"
+        else:
+            return "Is this a **classification** or **regression** problem?"
 
-        if st.session_state.task_type:
-            models = recommend_models(st.session_state.task_type)
-            return (
-                f"Got it — {st.session_state.task_type}.\n\n"
-                f"I recommend these models:\n"
-                f"{', '.join(models)}\n\n"
-                "Which would you like to try?"
-            )
+        models = recommend_models(st.session_state.task_type)
+        return (
+            f"Got it — **{st.session_state.task_type}**.\n\n"
+            "Recommended models:\n"
+            f"{', '.join(models)}\n\n"
+            "Which model would you like to try?"
+        )
 
-    # Step 4: Train model
+    # ---- STEP 3: MODEL TRAINING ----
     models = recommend_models(st.session_state.task_type)
 
     for model in models:
@@ -58,13 +59,14 @@ def run_agent(user_input: str):
                 st.session_state.task_type,
                 model
             )
-            st.session_state.model_results[model] = results
 
             metric_name = list(results.keys())[0]
+
             return (
-                f"✅ {model} trained successfully!\n\n"
-                f"{metric_name}: {results[metric_name]:.3f}\n\n"
+                f"✅ **{model} trained successfully!**\n\n"
+                f"{metric_name}: **{results[metric_name]:.3f}**\n\n"
                 "Would you like to try another model or tune this one?"
             )
 
-    return "Tell me what you’d like to do next."
+    return "Tell me what you'd like to do next."
+
