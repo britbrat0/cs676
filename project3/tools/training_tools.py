@@ -1,89 +1,51 @@
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge, Lasso
-from xgboost import XGBClassifier, XGBRegressor
-from sklearn.metrics import accuracy_score, r2_score
 import pandas as pd
-import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, LogisticRegression
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+import xgboost as xgb
+from sklearn.metrics import r2_score, accuracy_score
 
-def train_model(df, target, task_type, model_name, params=None):
+def train_model(df, target_col, task_type, model_name, **hyperparams):
     """
-    Train a ML model with optional hyperparameter overrides.
+    Train a model on the given dataset with optional hyperparameters.
+    Returns a dictionary with evaluation metric.
     """
-    X = df.drop(columns=[target])
-    y = df[target]
+    X = df.drop(columns=[target_col])
+    y = df[target_col]
 
-    # ---- Handle missing values ----
-    X_numeric = X.select_dtypes(include=[np.number]).copy()
-    X_numeric = X_numeric.fillna(X_numeric.median())
+    # Convert categorical features to dummy variables
+    X = pd.get_dummies(X, drop_first=True)
 
-    X_categorical = X.select_dtypes(include=["object", "category"]).copy()
-    X_categorical = X_categorical.fillna("missing")
+    # Split dataset
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # ---- Preprocessing ----
-    preprocessor = ColumnTransformer([
-        ("num", StandardScaler(), X_numeric.columns),
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), X_categorical.columns)
-    ], remainder="drop")
-
-    # ---- Model selection ----
+    # Create model with hyperparameters
     if model_name == "Linear Regression":
-        model = LinearRegression()
-        metric = "r2"
+        model = LinearRegression(**hyperparams)
     elif model_name == "Ridge":
-        model = Ridge(alpha=1.0)
-        metric = "r2"
+        model = Ridge(**hyperparams)
     elif model_name == "Lasso":
-        model = Lasso(alpha=1.0)
-        metric = "r2"
+        model = Lasso(**hyperparams)
     elif model_name == "Random Forest Regressor":
-        model = RandomForestRegressor(n_estimators=200, random_state=42)
-        metric = "r2"
-    elif model_name == "XGBoost Regressor":
-        model = XGBRegressor()
-        metric = "r2"
+        model = RandomForestRegressor(**hyperparams)
+    elif model_name == "Random Forest Classifier":
+        model = RandomForestClassifier(**hyperparams)
     elif model_name == "Logistic Regression":
-        model = LogisticRegression(max_iter=1000)
-        metric = "accuracy"
-    elif model_name == "Random Forest":
-        model = RandomForestClassifier(n_estimators=200, random_state=42)
-        metric = "accuracy"
-    elif model_name == "XGBoost":
-        model = XGBClassifier(eval_metric="logloss", use_label_encoder=False)
-        metric = "accuracy"
+        model = LogisticRegression(max_iter=1000, **hyperparams)
+    elif model_name == "XGBoost Regressor":
+        model = xgb.XGBRegressor(**hyperparams)
+    elif model_name == "XGBoost Classifier":
+        model = xgb.XGBClassifier(**hyperparams)
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
-    # ---- Apply hyperparameter overrides ----
-    if params:
-        for k, v in params.items():
-            if isinstance(v, str) and v in ["True", "False"]:
-                params[k] = v == "True"
-        model.set_params(**params)
+    # Fit the model
+    model.fit(X_train, y_train)
 
-    # ---- Build pipeline ----
-    pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", model)
-    ])
-
-    # ---- Train/Test Split ----
-    X_full = pd.concat([X_numeric, X_categorical], axis=1)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_full, y, test_size=0.2, random_state=42
-    )
-
-    # ---- Train ----
-    pipeline.fit(X_train, y_train)
-
-    # ---- Evaluate ----
-    y_pred = pipeline.predict(X_test)
-    if metric == "accuracy":
-        score = accuracy_score(y_test, y_pred)
+    # Evaluate
+    if task_type == "regression":
+        score = r2_score(y_test, model.predict(X_test))
+        return {"r2": score}
     else:
-        score = r2_score(y_test, y_pred)
-
-    return {metric: score}
+        score = accuracy_score(y_test, model.predict(X_test))
+        return {"accuracy": score}
