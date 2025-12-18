@@ -35,7 +35,7 @@ if uploaded_file:
 
 df = st.session_state.df
 
-# ---- Sidebar for EDA ----
+# ---- Sidebar for quick EDA ----
 if df is not None:
     st.sidebar.header("Quick EDA Tools")
     eda_option = st.sidebar.selectbox(
@@ -53,63 +53,60 @@ if df is not None:
         ]
     )
 
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
     numeric_cols = df.select_dtypes(include="number").columns
 
-    if eda_option == "Summarize stats":
-        st.write(df.describe(include="all"))
+    if eda_option != "None":
+        if eda_option == "Summarize stats":
+            st.write(df.describe(include="all"))
 
-    elif eda_option == "Correlation matrix":
-        corr = df[numeric_cols].corr()
-        st.dataframe(corr)
-        fig, ax = plt.subplots()
-        sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-        st.pyplot(fig)
+        elif eda_option == "Correlation matrix":
+            corr = df[numeric_cols].corr()
+            st.dataframe(corr)
+            fig, ax = plt.subplots()
+            sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+            st.pyplot(fig)
 
-    elif eda_option == "Histogram":
-        col = st.selectbox("Column for histogram", numeric_cols)
-        bins = st.slider("Bins", 5, 100, 20)
-        fig, ax = plt.subplots()
-        df[col].hist(bins=bins, ax=ax)
-        st.pyplot(fig)
+        elif eda_option == "Histogram":
+            col = st.selectbox("Column for histogram", numeric_cols)
+            bins = st.slider("Bins", 5, 100, 20)
+            fig, ax = plt.subplots()
+            df[col].hist(bins=bins, ax=ax)
+            st.pyplot(fig)
 
-    elif eda_option == "Scatter plot":
-        x_col = st.selectbox("X-axis", numeric_cols)
-        y_col = st.selectbox("Y-axis", numeric_cols)
-        fig, ax = plt.subplots()
-        df.plot.scatter(x=x_col, y=y_col, ax=ax)
-        st.pyplot(fig)
+        elif eda_option == "Scatter plot":
+            x_col = st.selectbox("X-axis", numeric_cols)
+            y_col = st.selectbox("Y-axis", numeric_cols)
+            fig, ax = plt.subplots()
+            df.plot.scatter(x=x_col, y=y_col, ax=ax)
+            st.pyplot(fig)
 
-    elif eda_option == "Boxplot":
-        col = st.selectbox("Column for boxplot", numeric_cols)
-        fig, ax = plt.subplots()
-        sns.boxplot(y=df[col], ax=ax)
-        st.pyplot(fig)
+        elif eda_option == "Boxplot":
+            col = st.selectbox("Column for boxplot", numeric_cols)
+            fig, ax = plt.subplots()
+            sns.boxplot(y=df[col], ax=ax)
+            st.pyplot(fig)
 
-    elif eda_option == "Value counts":
-        col = st.selectbox("Column", df.columns)
-        st.write(df[col].value_counts())
+        elif eda_option == "Value counts":
+            col = st.selectbox("Column", df.columns)
+            st.write(df[col].value_counts())
 
-    elif eda_option == "Missing values summary":
-        st.write(df.isnull().sum())
+        elif eda_option == "Missing values summary":
+            st.write(df.isnull().sum())
 
-# ---- Chat history display (below EDA) ----
-st.markdown("### Chat with AI agent:")
+# ---- Display chat history (below EDA) ----
+st.markdown("### Conversation with AI:")
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"**You:** {msg['content']}")
     else:
         st.markdown(f"**AI:** {msg['content']}")
 
-# ---- Chat input form (below history) ----
+# ---- Chat input (below conversation) ----
 with st.form(key="chat_form", clear_on_submit=True):
     user_input = st.text_input("Type your message here")
     submit_button = st.form_submit_button("Send")
 
 if submit_button and user_input:
-    # Append user message
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     # ---- System prompt for LLM ----
@@ -124,7 +121,7 @@ if submit_button and user_input:
     Respond conversationally and clearly.
     """
 
-    # Call LLM
+    # ---- Call LLM ----
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -136,10 +133,4 @@ if submit_button and user_input:
 
     st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
 
-# ---- Display chat history (below EDA) ----
-st.markdown("### Conversation with AI:")
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f"**You:** {msg['content']}")
-    else:
-        st.markdown(f"**AI:** {msg['content']}")
+# ---- Conversation automatically updates on rerun ----
