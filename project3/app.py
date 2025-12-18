@@ -11,7 +11,7 @@ st.title("Agentic ML App")
 
 client = OpenAI()  # API key via environment variable OPENAI_API_KEY
 
-# ---- Session state initialization ----
+# ---- Session state ----
 for key in ["df", "target", "task_type", "last_model", "messages", "user_input"]:
     if key not in st.session_state:
         st.session_state[key] = None if key != "messages" else []
@@ -20,10 +20,6 @@ for key in ["df", "target", "task_type", "last_model", "messages", "user_input"]
 uploaded_file = st.file_uploader("Upload CSV dataset", type="csv")
 if uploaded_file:
     st.session_state.df = pd.read_csv(uploaded_file)
-    st.session_state.messages = []  # reset chat history if new dataset
-    st.session_state.target = None
-    st.session_state.task_type = None
-    st.session_state.last_model = None
     st.write("Preview of dataset:")
     st.dataframe(st.session_state.df.head())
 
@@ -34,8 +30,8 @@ if df is not None:
     st.sidebar.header("Quick EDA")
     eda_option = st.sidebar.selectbox(
         "Choose EDA action",
-        ["None", "Summarize stats", "Correlation matrix", "Histogram",
-         "Scatter plot", "Boxplot", "Value counts", "Missing values summary"]
+        ["None", "Summarize stats", "Correlation matrix", "Histogram", "Scatter plot",
+         "Boxplot", "Value counts", "Missing values summary"]
     )
 
     numeric_cols = df.select_dtypes(include="number").columns
@@ -146,7 +142,7 @@ if df is not None:
 st.header("Chat Bot")
 st.markdown("Ask questions about your dataset, models, or hyperparameters. The bot can execute ML actions directly.")
 
-# Display chat history below
+# Display chat history
 for msg in st.session_state.messages:
     role = "You" if msg["role"] == "user" else "AI"
     st.markdown(f"**{role}:** {msg['content']}")
@@ -164,84 +160,89 @@ def handle_chat():
     task_type = st.session_state.get("task_type")
     last_model = st.session_state.get("last_model")
 
-    if df is None:
-        st.session_state.messages.append({"role": "assistant", "content": "Please upload a dataset first."})
-        return
-
-    dataset_summary = (
-        f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns.\n"
-        f"Columns: {', '.join(df.columns)}\n"
-    )
-    if target:
-        dataset_summary += f"Target column: {target}\nTask type: {task_type}\n"
-    if last_model:
-        dataset_summary += f"Last trained model: {last_model}\n"
+    # Dataset summary for LLM context
+    if df is not None:
+        dataset_summary = (
+            f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns.\n"
+            f"Columns: {', '.join(df.columns)}\n"
+        )
+        if target:
+            dataset_summary += f"Target column: {target}\nTask type: {task_type}\n"
+        if last_model:
+            dataset_summary += f"Last trained model: {last_model}\n"
+    else:
+        dataset_summary = "No dataset uploaded yet."
 
     system_msg = (
         "You are an AI assistant for data analysis and machine learning. "
-        "Do NOT give Python code. Interpret the request and allow the app to execute functions to return results."
+        "Do NOT give Python code for the user to run. Instead, interpret the request "
+        "and allow the app to execute functions to return results."
         f"\n\nDataset context:\n{dataset_summary}"
     )
 
+    # Call LLM to determine user intent
     messages = [{"role": "system", "content": system_msg}]
     messages += st.session_state.messages
 
-    # Call LLM for intent
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=messages
     )
-    reply_text = response.choices[0].message.content
-    reply_lower = reply_text.lower()
-    final_reply = reply_text
+    reply = response.choices[0].message.content.lower()  # lowercase for intent parsing
+    final_reply = response.choices[0].message.content  # keep original for chat
 
-    recommended_models = recommend_models(task_type)
+    # ---- Agentic execution ----
+    if df is not None:
+        recommended_models = recommend_models(task_type)
 
-    # ---- Execute agentic actions ----
-    # Train
-    for model in recommended_models:
-        if f"train {model.lower()}" in reply_lower:
-            try:
-                results = train_model(df, target, task_type, model)
-                metric_name = list(results.keys())[0]
-                final_reply += f"\n✅ {model} trained! {metric_name}: {results[metric_name]:.3f}"
-                st.session_state.last_model = model
-            except Exception as e:
-                final_reply += f"\n⚠️ Training failed for {model}: {str(e)}"
-
-    # Compare
-    if "compare" in reply_lower:
-        comparison = []
+        # Train a model
         for model in recommended_models:
-            try:
-                results = train_model(df, target, task_type, model)
-                metric_name = list(results.keys())[0]
-                comparison.append(f"{model}: {metric_name}={results[metric_name]:.3f}")
-            except Exception as e:
-                comparison.append(f"{model}: ⚠️ {str(e)}")
-        final_reply += "\n\n### Comparison Results\n" + "\n".join(comparison)
+            if f"train {model.lower()}" in reply:
+                try:
+                    results = train_model(df, target, task_type, model)
+                    metric_name = list(results.keys())[0]
+                    final_reply += f"\n✅ {model} trained! {metric_name}: {results[metric_name]:.3f}"
+                    st.session_state.last_model = model
+                except Exception as e:
+                    final_reply += f"\n⚠️ Training failed for {model}: {str(e)}"
 
-    # Basic EDA
-    numeric_cols = df.select_dtypes(include="number").columns
-    if "correlation" in reply_lower:
-        corr = df[numeric_cols].corr()
-        st.dataframe(corr)
-        final_reply += "\n✅ Displayed correlation matrix."
-    if "histogram" in reply_lower and len(numeric_cols) > 0:
-        col = numeric_cols[0]
-        fig, ax = plt.subplots()
-        df[col].hist(ax=ax)
-        st.pyplot(fig)
-        final_reply += f"\n✅ Displayed histogram of column '{col}'."
-    if "scatter" in reply_lower and len(numeric_cols) >= 2:
-        fig, ax = plt.subplots()
-        df.plot.scatter(x=numeric_cols[0], y=numeric_cols[1], ax=ax)
-        st.pyplot(fig)
-        final_reply += f"\n✅ Displayed scatter plot: {numeric_cols[0]} vs {numeric_cols[1]}"
+        # Compare all recommended models
+        if "compare" in reply:
+            comparison = []
+            for model in recommended_models:
+                try:
+                    results = train_model(df, target, task_type, model)
+                    metric_name = list(results.keys())[0]
+                    comparison.append(f"{model}: {metric_name}={results[metric_name]:.3f}")
+                except Exception as e:
+                    comparison.append(f"{model}: ⚠️ {str(e)}")
+            final_reply += "\n\n### Comparison Results\n" + "\n".join(comparison)
+
+        # Basic EDA requests
+        if "correlation" in reply:
+            numeric_cols = df.select_dtypes(include="number").columns
+            corr = df[numeric_cols].corr()
+            st.dataframe(corr)
+            final_reply += "\n✅ Displayed correlation matrix."
+        if "histogram" in reply:
+            numeric_cols = df.select_dtypes(include="number").columns
+            col = numeric_cols[0] if numeric_cols.any() else df.columns[0]
+            fig, ax = plt.subplots()
+            df[col].hist(ax=ax)
+            st.pyplot(fig)
+            final_reply += f"\n✅ Displayed histogram of column '{col}'."
+        if "scatter" in reply:
+            numeric_cols = df.select_dtypes(include="number").columns
+            if len(numeric_cols) >= 2:
+                fig, ax = plt.subplots()
+                df.plot.scatter(x=numeric_cols[0], y=numeric_cols[1], ax=ax)
+                st.pyplot(fig)
+                final_reply += f"\n✅ Displayed scatter plot: {numeric_cols[0]} vs {numeric_cols[1]}"
 
     st.session_state.messages.append({"role": "assistant", "content": final_reply})
 
-# Chat input below conversation
+
+# Input box
 st.text_input(
     "Type your message here",
     key="user_input",
