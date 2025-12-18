@@ -142,6 +142,7 @@ if df is not None:
 st.header("Chat Bot")
 st.markdown("Ask questions about your dataset, models, or hyperparameters.")
 
+# Display chat history
 for msg in st.session_state.messages:
     role = "You" if msg["role"] == "user" else "AI"
     st.markdown(f"**{role}:** {msg['content']}")
@@ -150,10 +151,31 @@ def handle_chat():
     user_input = st.session_state.user_input.strip()
     if not user_input:
         return
+
+    # Append user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""
 
-    messages = [{"role": "system", "content": "You are an AI assistant for data analysis and ML."}]
+    # Dataset summary for LLM context
+    if st.session_state.df is not None:
+        df = st.session_state.df
+        dataset_summary = (
+            f"The dataset has {df.shape[0]} rows and {df.shape[1]} columns.\n"
+            f"Columns: {', '.join(df.columns)}\n"
+        )
+        if st.session_state.target:
+            dataset_summary += f"Target column: {st.session_state.target}\n"
+            dataset_summary += f"Task type: {st.session_state.task_type}\n"
+        if st.session_state.last_model:
+            dataset_summary += f"Last trained model: {st.session_state.last_model}\n"
+    else:
+        dataset_summary = "No dataset uploaded yet."
+
+    messages = [
+        {"role": "system", "content": 
+         "You are a helpful AI assistant for data analysis and machine learning. "
+         "Here is the dataset context:\n" + dataset_summary}
+    ]
     messages += st.session_state.messages
 
     response = client.chat.completions.create(
@@ -163,6 +185,7 @@ def handle_chat():
     reply = response.choices[0].message.content
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
+# Chat input below history
 st.text_input(
     "Type your message here",
     key="user_input",
