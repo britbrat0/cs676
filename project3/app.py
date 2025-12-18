@@ -2,21 +2,21 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import os
 from openai import OpenAI
+import os
 from agents.orchestrator import train_model
-from agents.orchestrator import run_agent
 from tools.model_tools import recommend_models
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# ---- Initialize OpenAI client securely ----
+api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=api_key)
 
 st.set_page_config(page_title="Agentic ML Chat", layout="wide")
 st.title("Agentic ML Chat with EDA & ML")
 
 # ---- Session state ----
 if "messages" not in st.session_state:
-    st.session_state.messages = []  # Stores chat history
+    st.session_state.messages = []
 if "df" not in st.session_state:
     st.session_state.df = None
 if "target" not in st.session_state:
@@ -34,43 +34,6 @@ if uploaded_file:
     st.dataframe(st.session_state.df.head())
 
 df = st.session_state.df
-
-# ---- Chat input ----
-user_input = st.text_input("Send a message to the AI assistant")
-if user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-
-    # ---- Construct system prompt ----
-    system_prompt = """
-    You are a helpful AI data scientist assistant.
-    The user will upload a dataset.
-    You can guide them step-by-step:
-    - Ask which column to predict
-    - Determine if task is classification or regression
-    - Suggest ML models (Linear Regression, Ridge, Lasso, Random Forest, XGBoost, etc.)
-    - Guide tuning of hyperparameters
-    - Suggest EDA options: summarize stats, correlation, filter rows, histograms, scatter plots, boxplots
-    Respond conversationally. Only call training functions when the user confirms.
-    """
-
-    # ---- Call LLM ----
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system_prompt}] + st.session_state.messages
-        )
-        assistant_msg = response.choices[0].message.content
-        st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
-    except Exception as e:
-        assistant_msg = f"⚠️ Error calling LLM: {str(e)}"
-        st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
-
-# ---- Display chat history ----
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f"**You:** {msg['content']}")
-    else:
-        st.markdown(f"**AI:** {msg['content']}")
 
 # ---- Sidebar for EDA ----
 if df is not None:
@@ -131,3 +94,45 @@ if df is not None:
 
     elif eda_option == "Missing values summary":
         st.write(df.isnull().sum())
+
+# ---- Chat history display (below EDA) ----
+st.markdown("### Conversation with AI:")
+for msg in st.session_state.messages:
+    if msg["role"] == "user":
+        st.markdown(f"**You:** {msg['content']}")
+    else:
+        st.markdown(f"**AI:** {msg['content']}")
+
+# ---- Chat input form (below history) ----
+with st.form(key="chat_form", clear_on_submit=True):
+    user_input = st.text_input("Type your message here")
+    submit_button = st.form_submit_button("Send")
+
+    if submit_button and user_input:
+        st.session_state.messages.append({"role": "user", "content": user_input})
+
+        # ---- System prompt for LLM ----
+        system_prompt = """
+        You are a helpful AI data scientist assistant.
+        Guide the user step-by-step:
+        - Ask which column to predict
+        - Determine task type (classification/regression)
+        - Suggest ML models
+        - Guide tuning of hyperparameters
+        - Suggest EDA actions
+        Respond conversationally and clearly.
+        """
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": system_prompt}] + st.session_state.messages
+            )
+            assistant_msg = response.choices[0].message.content
+        except Exception as e:
+            assistant_msg = f"⚠️ Error calling LLM: {str(e)}"
+
+        st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
+
+        # Force rerun to display new messages above input
+        st.experimental_rerun()
