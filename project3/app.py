@@ -11,7 +11,7 @@ st.title("Agentic ML App")
 
 client = OpenAI()  # API key via environment variable OPENAI_API_KEY
 
-# ---- Session state ----
+# ---- Session state initialization ----
 for key in ["df", "target", "task_type", "last_model", "messages", "user_input"]:
     if key not in st.session_state:
         st.session_state[key] = None if key != "messages" else []
@@ -20,6 +20,10 @@ for key in ["df", "target", "task_type", "last_model", "messages", "user_input"]
 uploaded_file = st.file_uploader("Upload CSV dataset", type="csv")
 if uploaded_file:
     st.session_state.df = pd.read_csv(uploaded_file)
+    st.session_state.messages = []  # reset chat history if new dataset
+    st.session_state.target = None
+    st.session_state.task_type = None
+    st.session_state.last_model = None
     st.write("Preview of dataset:")
     st.dataframe(st.session_state.df.head())
 
@@ -30,8 +34,8 @@ if df is not None:
     st.sidebar.header("Quick EDA")
     eda_option = st.sidebar.selectbox(
         "Choose EDA action",
-        ["None", "Summarize stats", "Correlation matrix", "Histogram", "Scatter plot",
-         "Boxplot", "Value counts", "Missing values summary"]
+        ["None", "Summarize stats", "Correlation matrix", "Histogram",
+         "Scatter plot", "Boxplot", "Value counts", "Missing values summary"]
     )
 
     numeric_cols = df.select_dtypes(include="number").columns
@@ -142,7 +146,7 @@ if df is not None:
 st.header("Chat Bot")
 st.markdown("Ask questions about your dataset, models, or hyperparameters. The bot can execute ML actions directly.")
 
-# Display chat history
+# Display chat history below
 for msg in st.session_state.messages:
     role = "You" if msg["role"] == "user" else "AI"
     st.markdown(f"**{role}:** {msg['content']}")
@@ -155,63 +159,89 @@ def handle_chat():
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""
 
-    # Dataset summary for LLM context
-    df = st.session_state.df
-    target = st.session_state.target
-    task_type = st.session_state.task_type
-    last_model = st.session_state.last_model
+    df = st.session_state.get("df")
+    target = st.session_state.get("target")
+    task_type = st.session_state.get("task_type")
+    last_model = st.session_state.get("last_model")
 
-    dataset_summary = "No dataset uploaded."
-    if df is not None:
-        dataset_summary = f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns. Columns: {', '.join(df.columns)}"
-        if target:
-            dataset_summary += f"\nTarget: {target}\nTask type: {task_type}"
-        if last_model:
-            dataset_summary += f"\nLast trained model: {last_model}"
+    if df is None:
+        st.session_state.messages.append({"role": "assistant", "content": "Please upload a dataset first."})
+        return
 
-    system_msg = f"You are an AI assistant for data analysis and ML. Here is the dataset context:\n{dataset_summary}"
+    dataset_summary = (
+        f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns.\n"
+        f"Columns: {', '.join(df.columns)}\n"
+    )
+    if target:
+        dataset_summary += f"Target column: {target}\nTask type: {task_type}\n"
+    if last_model:
+        dataset_summary += f"Last trained model: {last_model}\n"
+
+    system_msg = (
+        "You are an AI assistant for data analysis and machine learning. "
+        "Do NOT give Python code. Interpret the request and allow the app to execute functions to return results."
+        f"\n\nDataset context:\n{dataset_summary}"
+    )
 
     messages = [{"role": "system", "content": system_msg}]
     messages += st.session_state.messages
 
-    # Get LLM response for intent
+    # Call LLM for intent
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=messages
     )
-    reply = response.choices[0].message.content
+    reply_text = response.choices[0].message.content
+    reply_lower = reply_text.lower()
+    final_reply = reply_text
 
-    # ---- Agentic execution ----
-    reply_lower = reply.lower()
-    if df is not None:
-        recommended_models = recommend_models(task_type)
+    recommended_models = recommend_models(task_type)
 
-        # Train model
+    # ---- Execute agentic actions ----
+    # Train
+    for model in recommended_models:
+        if f"train {model.lower()}" in reply_lower:
+            try:
+                results = train_model(df, target, task_type, model)
+                metric_name = list(results.keys())[0]
+                final_reply += f"\n✅ {model} trained! {metric_name}: {results[metric_name]:.3f}"
+                st.session_state.last_model = model
+            except Exception as e:
+                final_reply += f"\n⚠️ Training failed for {model}: {str(e)}"
+
+    # Compare
+    if "compare" in reply_lower:
+        comparison = []
         for model in recommended_models:
-            if f"train {model.lower()}" in reply_lower:
-                try:
-                    results = train_model(df, target, task_type, model)
-                    metric_name = list(results.keys())[0]
-                    reply += f"\n✅ {model} trained! {metric_name}: {results[metric_name]:.3f}"
-                    st.session_state.last_model = model
-                except Exception as e:
-                    reply += f"\n⚠️ Training failed: {str(e)}"
+            try:
+                results = train_model(df, target, task_type, model)
+                metric_name = list(results.keys())[0]
+                comparison.append(f"{model}: {metric_name}={results[metric_name]:.3f}")
+            except Exception as e:
+                comparison.append(f"{model}: ⚠️ {str(e)}")
+        final_reply += "\n\n### Comparison Results\n" + "\n".join(comparison)
 
-        # Compare models
-        if "compare" in reply_lower:
-            comparison = []
-            for model in recommended_models:
-                try:
-                    results = train_model(df, target, task_type, model)
-                    metric_name = list(results.keys())[0]
-                    comparison.append(f"{model}: {metric_name}={results[metric_name]:.3f}")
-                except Exception as e:
-                    comparison.append(f"{model}: ⚠️ {str(e)}")
-            reply += "\n\n### Comparison Results\n" + "\n".join(comparison)
+    # Basic EDA
+    numeric_cols = df.select_dtypes(include="number").columns
+    if "correlation" in reply_lower:
+        corr = df[numeric_cols].corr()
+        st.dataframe(corr)
+        final_reply += "\n✅ Displayed correlation matrix."
+    if "histogram" in reply_lower and len(numeric_cols) > 0:
+        col = numeric_cols[0]
+        fig, ax = plt.subplots()
+        df[col].hist(ax=ax)
+        st.pyplot(fig)
+        final_reply += f"\n✅ Displayed histogram of column '{col}'."
+    if "scatter" in reply_lower and len(numeric_cols) >= 2:
+        fig, ax = plt.subplots()
+        df.plot.scatter(x=numeric_cols[0], y=numeric_cols[1], ax=ax)
+        st.pyplot(fig)
+        final_reply += f"\n✅ Displayed scatter plot: {numeric_cols[0]} vs {numeric_cols[1]}"
 
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.session_state.messages.append({"role": "assistant", "content": final_reply})
 
-# Input box
+# Chat input below conversation
 st.text_input(
     "Type your message here",
     key="user_input",
