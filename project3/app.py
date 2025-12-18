@@ -103,7 +103,7 @@ for msg in st.session_state.messages:
     else:
         st.markdown(f"**AI:** {msg['content']}")
 
-# ---- Chat input + buttons ----
+# ---- Chat input + dynamic ML buttons ----
 def handle_input():
     user_input = st.session_state.user_input.strip()
     if not user_input:
@@ -112,7 +112,7 @@ def handle_input():
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""  # clear input box
 
-    # ---- Detect commands ----
+    # ---- Commands for ML training/tuning ----
     if df is not None and st.session_state.target and st.session_state.task_type:
         lower_input = user_input.lower()
 
@@ -157,7 +157,7 @@ def handle_input():
             st.session_state.messages.append({"role": "assistant", "content": msg})
             return
 
-        # Tuning hyperparameters
+        # Tune last trained model
         elif "tune" in lower_input:
             if st.session_state.last_model is None:
                 msg = "No model trained yet to tune."
@@ -208,7 +208,7 @@ def handle_input():
 
     st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
 
-# Single-line input triggers handle_input() on Enter
+# ---- Chat input ----
 st.text_input(
     "Type your message here",
     key="user_input",
@@ -216,31 +216,24 @@ st.text_input(
     placeholder="Press Enter to send"
 )
 
-# ---- Quick action buttons below input ----
-st.markdown("### Quick Actions:")
-cols = st.columns([1, 1, 1, 1, 1])
+# ---- Dynamic ML buttons based on dataset ----
+if df is not None and st.session_state.target and st.session_state.task_type:
+    recommended_models = recommend_models(st.session_state.task_type)
+    st.markdown("### Suggested Models:")
+    cols = st.columns(len(recommended_models) + 2)
 
-with cols[0]:
-    if st.button("Summarize stats"):
-        st.session_state.messages.append({"role": "user", "content": "summarize stats"})
-        handle_input()
+    # Model-specific train buttons
+    for i, model in enumerate(recommended_models):
+        if cols[i].button(f"Train {model}"):
+            st.session_state.messages.append({"role": "user", "content": f"train {model}"})
+            handle_input()
 
-with cols[1]:
-    if st.button("Correlation matrix"):
-        st.session_state.messages.append({"role": "user", "content": "show correlation matrix"})
-        handle_input()
-
-with cols[2]:
-    if st.button("Train Random Forest"):
-        st.session_state.messages.append({"role": "user", "content": "train Random Forest Regressor"})
-        handle_input()
-
-with cols[3]:
-    if st.button("Compare all models"):
+    # Compare all recommended models
+    if cols[len(recommended_models)].button("Compare all models"):
         st.session_state.messages.append({"role": "user", "content": "compare all"})
         handle_input()
 
-with cols[4]:
-    if st.button("Missing values summary"):
-        st.session_state.messages.append({"role": "user", "content": "missing values summary"})
+    # Tune last trained model
+    if cols[len(recommended_models)+1].button("Tune last model"):
+        st.session_state.messages.append({"role": "user", "content": "tune"})
         handle_input()
