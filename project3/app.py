@@ -8,7 +8,7 @@ from tools.model_tools import recommend_models
 st.set_page_config(page_title="Agentic ML App", layout="wide")
 st.title("Agentic ML App")
 
-# ---- Session state ----
+# ---- Session state initialization ----
 for key in ["df", "target", "task_type", "last_model", "messages", "user_input"]:
     if key not in st.session_state:
         st.session_state[key] = None if key != "messages" else []
@@ -22,7 +22,7 @@ if uploaded_file:
 
 df = st.session_state.df
 
-# ---- Sidebar for Quick EDA ----
+# ---- Sidebar: Quick EDA ----
 if df is not None:
     st.sidebar.header("Quick EDA Tools")
     eda_option = st.sidebar.selectbox(
@@ -134,11 +134,37 @@ if df is not None:
         st.markdown("### Comparison Results")
         st.text("\n".join(comparison_results))
 
-    if cols[2].button("Tune Last Model"):
-        if st.session_state.last_model:
-            st.info("Use the chat bot to specify hyperparameters for tuning the last trained model.")
-        else:
-            st.warning("No model has been trained yet to tune.")
+    # ---- Hyperparameter Tuning Section ----
+    if st.session_state.last_model:
+        st.markdown(f"### Tune Last Model: {st.session_state.last_model}")
+        with st.form(key="tune_form"):
+            hyperparams = {}
+            # Example hyperparameters by model
+            if "Random Forest" in st.session_state.last_model:
+                hyperparams["n_estimators"] = st.number_input("n_estimators", min_value=10, max_value=1000, value=100, step=10)
+                hyperparams["max_depth"] = st.number_input("max_depth (None=0)", min_value=0, max_value=50, value=0, step=1)
+            elif "Linear Regression" in st.session_state.last_model:
+                hyperparams["fit_intercept"] = st.checkbox("fit_intercept", value=True)
+            elif "XGBoost" in st.session_state.last_model:
+                hyperparams["n_estimators"] = st.number_input("n_estimators", min_value=10, max_value=1000, value=100, step=10)
+                hyperparams["learning_rate"] = st.number_input("learning_rate", min_value=0.01, max_value=1.0, value=0.1, step=0.01)
+
+            submitted = st.form_submit_button("Tune Model")
+            if submitted:
+                try:
+                    if "max_depth" in hyperparams and hyperparams["max_depth"] == 0:
+                        hyperparams["max_depth"] = None
+                    results = train_model(
+                        df,
+                        st.session_state.target,
+                        st.session_state.task_type,
+                        st.session_state.last_model,
+                        **hyperparams
+                    )
+                    metric_name = list(results.keys())[0]
+                    st.success(f"✅ {st.session_state.last_model} tuned!\n{metric_name}: {results[metric_name]:.3f}")
+                except Exception as e:
+                    st.error(f"⚠️ Tuning failed: {str(e)}")
 
 # ---- Chat Bot Section ----
 st.header("Chat Bot")
