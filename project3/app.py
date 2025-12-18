@@ -96,7 +96,7 @@ if df is not None:
         st.write(df.isnull().sum())
 
 # ---- Chat history display (below EDA) ----
-st.markdown("### Conversation with AI:")
+st.markdown("### Chat with AI agent:")
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"**You:** {msg['content']}")
