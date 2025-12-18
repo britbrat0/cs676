@@ -103,29 +103,100 @@ for msg in st.session_state.messages:
     else:
         st.markdown(f"**AI:** {msg['content']}")
 
-# ---- Chat input (below conversation) ----
+# ---- Chat input + buttons ----
 def handle_input():
     user_input = st.session_state.user_input.strip()
     if not user_input:
         return
 
-    # Append user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""  # clear input box
 
-    # ---- System prompt for LLM ----
+    # ---- Detect commands ----
+    if df is not None and st.session_state.target and st.session_state.task_type:
+        lower_input = user_input.lower()
+
+        # Train a specific model
+        if "train" in lower_input:
+            model_name = user_input.split("train")[-1].strip()
+            if not model_name:
+                msg = "Please specify a model to train."
+            else:
+                try:
+                    results = train_model(
+                        df,
+                        st.session_state.target,
+                        st.session_state.task_type,
+                        model_name
+                    )
+                    metric_name = list(results.keys())[0]
+                    st.session_state.last_model = model_name
+                    msg = f"✅ {model_name} trained successfully!\n{metric_name}: {results[metric_name]:.3f}"
+                except Exception as e:
+                    msg = f"⚠️ Training failed for {model_name}.\nError: {str(e)}"
+            st.session_state.messages.append({"role": "assistant", "content": msg})
+            return
+
+        # Compare all recommended models
+        elif "compare all" in lower_input:
+            models = recommend_models(st.session_state.task_type)
+            comparison_results = []
+            for model in models:
+                try:
+                    results = train_model(
+                        df,
+                        st.session_state.target,
+                        st.session_state.task_type,
+                        model
+                    )
+                    metric_name = list(results.keys())[0]
+                    comparison_results.append(f"{model}: {metric_name}={results[metric_name]:.3f}")
+                except Exception as e:
+                    comparison_results.append(f"{model}: ⚠️ {str(e)}")
+            msg = "### Comparison Results\n" + "\n".join(comparison_results)
+            st.session_state.messages.append({"role": "assistant", "content": msg})
+            return
+
+        # Tuning hyperparameters
+        elif "tune" in lower_input:
+            if st.session_state.last_model is None:
+                msg = "No model trained yet to tune."
+            else:
+                parts = user_input.split()
+                kwargs = {}
+                for part in parts:
+                    if "=" in part:
+                        key, val = part.split("=")
+                        try:
+                            kwargs[key] = float(val)
+                        except ValueError:
+                            kwargs[key] = val
+                try:
+                    results = train_model(
+                        df,
+                        st.session_state.target,
+                        st.session_state.task_type,
+                        st.session_state.last_model,
+                        **kwargs
+                    )
+                    metric_name = list(results.keys())[0]
+                    msg = f"✅ {st.session_state.last_model} tuned!\n{metric_name}: {results[metric_name]:.3f}"
+                except Exception as e:
+                    msg = f"⚠️ Tuning failed: {str(e)}"
+            st.session_state.messages.append({"role": "assistant", "content": msg})
+            return
+
+    # ---- Otherwise, call LLM ----
     system_prompt = """
     You are a helpful AI data scientist assistant.
     Guide the user step-by-step:
     - Ask which column to predict
-    - Determine task type (classification/regression)
+    - Determine task type
     - Suggest ML models
     - Guide tuning of hyperparameters
     - Suggest EDA actions
-    Respond conversationally and clearly.
+    Respond conversationally.
     """
-
-    # ---- Call LLM ----
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -144,3 +215,32 @@ st.text_input(
     on_change=handle_input,
     placeholder="Press Enter to send"
 )
+
+# ---- Quick action buttons below input ----
+st.markdown("### Quick Actions:")
+cols = st.columns([1, 1, 1, 1, 1])
+
+with cols[0]:
+    if st.button("Summarize stats"):
+        st.session_state.messages.append({"role": "user", "content": "summarize stats"})
+        handle_input()
+
+with cols[1]:
+    if st.button("Correlation matrix"):
+        st.session_state.messages.append({"role": "user", "content": "show correlation matrix"})
+        handle_input()
+
+with cols[2]:
+    if st.button("Train Random Forest"):
+        st.session_state.messages.append({"role": "user", "content": "train Random Forest Regressor"})
+        handle_input()
+
+with cols[3]:
+    if st.button("Compare all models"):
+        st.session_state.messages.append({"role": "user", "content": "compare all"})
+        handle_input()
+
+with cols[4]:
+    if st.button("Missing values summary"):
+        st.session_state.messages.append({"role": "user", "content": "missing values summary"})
+        handle_input()
