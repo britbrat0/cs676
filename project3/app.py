@@ -108,31 +108,38 @@ with st.form(key="chat_form", clear_on_submit=True):
     user_input = st.text_input("Type your message here")
     submit_button = st.form_submit_button("Send")
 
-    if submit_button and user_input:
-        st.session_state.messages.append({"role": "user", "content": user_input})
+if submit_button and user_input:
+    # Append user message
+    st.session_state.messages.append({"role": "user", "content": user_input})
 
-        # ---- System prompt for LLM ----
-        system_prompt = """
-        You are a helpful AI data scientist assistant.
-        Guide the user step-by-step:
-        - Ask which column to predict
-        - Determine task type (classification/regression)
-        - Suggest ML models
-        - Guide tuning of hyperparameters
-        - Suggest EDA actions
-        Respond conversationally and clearly.
-        """
+    # ---- System prompt for LLM ----
+    system_prompt = """
+    You are a helpful AI data scientist assistant.
+    Guide the user step-by-step:
+    - Ask which column to predict
+    - Determine task type (classification/regression)
+    - Suggest ML models
+    - Guide tuning of hyperparameters
+    - Suggest EDA actions
+    Respond conversationally and clearly.
+    """
 
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": system_prompt}] + st.session_state.messages
-            )
-            assistant_msg = response.choices[0].message.content
-        except Exception as e:
-            assistant_msg = f"⚠️ Error calling LLM: {str(e)}"
+    # Call LLM
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system_prompt}] + st.session_state.messages
+        )
+        assistant_msg = response.choices[0].message.content
+    except Exception as e:
+        assistant_msg = f"⚠️ Error calling LLM: {str(e)}"
 
-        st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
+    st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
 
-        # Force rerun to display new messages above input
-        st.experimental_rerun()
+# ---- Display chat history (below EDA) ----
+st.markdown("### Conversation with AI:")
+for msg in st.session_state.messages:
+    if msg["role"] == "user":
+        st.markdown(f"**You:** {msg['content']}")
+    else:
+        st.markdown(f"**AI:** {msg['content']}")
