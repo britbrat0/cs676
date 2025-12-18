@@ -2,13 +2,17 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from agents.orchestrator import train_model, run_agent
+from agents.orchestrator import train_model
 from tools.model_tools import recommend_models
+from openai import OpenAI
 
 st.set_page_config(page_title="Agentic ML App", layout="wide")
 st.title("Agentic ML App")
 
-# ---- Session state initialization ----
+# ---- OpenAI Client ----
+client = OpenAI()  # Make sure OPENAI_API_KEY is set in your environment
+
+# ---- Session state ----
 for key in ["df", "target", "task_type", "last_model", "messages", "user_input"]:
     if key not in st.session_state:
         st.session_state[key] = None if key != "messages" else []
@@ -84,11 +88,10 @@ if df is not None:
 st.header("ML Tools")
 
 if df is not None:
-    # Target column selection
     target_col = st.selectbox("Select target column", df.columns)
     st.session_state.target = target_col
 
-    # Infer task type automatically
+    # Infer task type
     if pd.api.types.is_numeric_dtype(df[target_col]):
         st.session_state.task_type = "regression"
     else:
@@ -134,12 +137,11 @@ if df is not None:
         st.markdown("### Comparison Results")
         st.text("\n".join(comparison_results))
 
-    # ---- Hyperparameter Tuning Section ----
+    # ---- Hyperparameter Tuning Form ----
     if st.session_state.last_model:
         st.markdown(f"### Tune Last Model: {st.session_state.last_model}")
         with st.form(key="tune_form"):
             hyperparams = {}
-            # Example hyperparameters by model
             if "Random Forest" in st.session_state.last_model:
                 hyperparams["n_estimators"] = st.number_input("n_estimators", min_value=10, max_value=1000, value=100, step=10)
                 hyperparams["max_depth"] = st.number_input("max_depth (None=0)", min_value=0, max_value=50, value=0, step=1)
@@ -166,10 +168,10 @@ if df is not None:
                 except Exception as e:
                     st.error(f"⚠️ Tuning failed: {str(e)}")
 
-# ---- Chat Bot Section ----
+# ---- LLM Chat Bot Section ----
 st.header("Chat Bot")
 st.markdown(
-    "Use this chat bot for guidance on EDA, model selection, hyperparameter tuning, and general questions."
+    "Ask questions about your dataset, models, hyperparameters, or EDA."
 )
 
 # Display chat history
@@ -187,9 +189,16 @@ def handle_chat():
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""
 
-    # Call your LLM orchestrator
-    response = run_agent(user_input)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    # --- LLM call ---
+    messages = [{"role": "system", "content": "You are an AI assistant for data analysis and ML."}]
+    messages += st.session_state.messages  # full conversation
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=messages
+    )
+    reply = response.choices[0].message.content
+    st.session_state.messages.append({"role": "assistant", "content": reply})
 
 st.text_input(
     "Type your message here",
