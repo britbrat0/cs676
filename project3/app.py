@@ -15,18 +15,9 @@ st.set_page_config(page_title="Agentic ML Chat", layout="wide")
 st.title("Agentic ML Chat with EDA & ML")
 
 # ---- Session state ----
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "df" not in st.session_state:
-    st.session_state.df = None
-if "target" not in st.session_state:
-    st.session_state.target = None
-if "task_type" not in st.session_state:
-    st.session_state.task_type = None
-if "last_model" not in st.session_state:
-    st.session_state.last_model = None
-if "user_input" not in st.session_state:
-    st.session_state.user_input = ""
+for key in ["messages", "df", "target", "task_type", "last_model", "user_input"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key != "messages" else []
 
 # ---- File upload ----
 uploaded_file = st.file_uploader("Upload CSV dataset", type="csv")
@@ -95,7 +86,7 @@ if df is not None:
         elif eda_option == "Missing values summary":
             st.write(df.isnull().sum())
 
-# ---- Display chat history (below EDA) ----
+# ---- Display chat history ----
 st.markdown("### Conversation with AI:")
 for msg in st.session_state.messages:
     if msg["role"] == "user":
@@ -103,7 +94,7 @@ for msg in st.session_state.messages:
     else:
         st.markdown(f"**AI:** {msg['content']}")
 
-# ---- Chat input + dynamic ML buttons ----
+# ---- Chat input ----
 def handle_input():
     user_input = st.session_state.user_input.strip()
     if not user_input:
@@ -112,7 +103,7 @@ def handle_input():
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""  # clear input box
 
-    # ---- Commands for ML training/tuning ----
+    # ---- ML commands ----
     if df is not None and st.session_state.target and st.session_state.task_type:
         lower_input = user_input.lower()
 
@@ -208,7 +199,7 @@ def handle_input():
 
     st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
 
-# ---- Chat input ----
+# Input box below conversation
 st.text_input(
     "Type your message here",
     key="user_input",
@@ -216,24 +207,26 @@ st.text_input(
     placeholder="Press Enter to send"
 )
 
-# ---- Dynamic ML buttons based on dataset ----
-if df is not None and st.session_state.target and st.session_state.task_type:
-    recommended_models = recommend_models(st.session_state.task_type)
-    st.markdown("### Suggested Models:")
-    cols = st.columns(len(recommended_models) + 2)
+# ---- Dynamic ML buttons ----
+if df is not None:
+    if st.session_state.target is None:
+        st.info("Please select the target column first (type it in chat).")
+    elif st.session_state.task_type is None:
+        st.info("Please specify the task type (classification or regression).")
+    else:
+        recommended_models = recommend_models(st.session_state.task_type)
+        st.markdown("### Suggested Models:")
+        cols = st.columns(len(recommended_models) + 2)
 
-    # Model-specific train buttons
-    for i, model in enumerate(recommended_models):
-        if cols[i].button(f"Train {model}"):
-            st.session_state.messages.append({"role": "user", "content": f"train {model}"})
+        for i, model in enumerate(recommended_models):
+            if cols[i].button(f"Train {model}"):
+                st.session_state.messages.append({"role": "user", "content": f"train {model}"})
+                handle_input()
+
+        if cols[len(recommended_models)].button("Compare all models"):
+            st.session_state.messages.append({"role": "user", "content": "compare all"})
             handle_input()
 
-    # Compare all recommended models
-    if cols[len(recommended_models)].button("Compare all models"):
-        st.session_state.messages.append({"role": "user", "content": "compare all"})
-        handle_input()
-
-    # Tune last trained model
-    if cols[len(recommended_models)+1].button("Tune last model"):
-        st.session_state.messages.append({"role": "user", "content": "tune"})
-        handle_input()
+        if cols[len(recommended_models)+1].button("Tune last model"):
+            st.session_state.messages.append({"role": "user", "content": "tune"})
+            handle_input()
