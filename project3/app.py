@@ -25,6 +25,8 @@ if "task_type" not in st.session_state:
     st.session_state.task_type = None
 if "last_model" not in st.session_state:
     st.session_state.last_model = None
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
 
 # ---- File upload ----
 uploaded_file = st.file_uploader("Upload CSV dataset", type="csv")
@@ -102,12 +104,14 @@ for msg in st.session_state.messages:
         st.markdown(f"**AI:** {msg['content']}")
 
 # ---- Chat input (below conversation) ----
-with st.form(key="chat_form", clear_on_submit=True):
-    user_input = st.text_input("Type your message here")
-    submit_button = st.form_submit_button("Send")
+def handle_input():
+    user_input = st.session_state.user_input.strip()
+    if not user_input:
+        return
 
-if submit_button and user_input:
+    # Append user message
     st.session_state.messages.append({"role": "user", "content": user_input})
+    st.session_state.user_input = ""  # clear input box
 
     # ---- System prompt for LLM ----
     system_prompt = """
@@ -133,4 +137,10 @@ if submit_button and user_input:
 
     st.session_state.messages.append({"role": "assistant", "content": assistant_msg})
 
-# ---- Conversation automatically updates on rerun ----
+# Single-line input triggers handle_input() on Enter
+st.text_input(
+    "Type your message here",
+    key="user_input",
+    on_change=handle_input,
+    placeholder="Press Enter to send"
+)
