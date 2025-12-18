@@ -138,9 +138,9 @@ if df is not None:
                 except Exception as e:
                     st.error(f"⚠️ Tuning failed: {str(e)}")
 
-# ---- LLM Chat Bot Section ----
+# ---- Agentic LLM Chat Bot Section ----
 st.header("Chat Bot")
-st.markdown("Ask questions about your dataset, models, or hyperparameters.")
+st.markdown("Ask questions about your dataset, models, or hyperparameters. The bot can execute ML actions directly.")
 
 # Display chat history
 for msg in st.session_state.messages:
@@ -152,40 +152,66 @@ def handle_chat():
     if not user_input:
         return
 
-    # Append user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.user_input = ""
 
     # Dataset summary for LLM context
-    if st.session_state.df is not None:
-        df = st.session_state.df
-        dataset_summary = (
-            f"The dataset has {df.shape[0]} rows and {df.shape[1]} columns.\n"
-            f"Columns: {', '.join(df.columns)}\n"
-        )
-        if st.session_state.target:
-            dataset_summary += f"Target column: {st.session_state.target}\n"
-            dataset_summary += f"Task type: {st.session_state.task_type}\n"
-        if st.session_state.last_model:
-            dataset_summary += f"Last trained model: {st.session_state.last_model}\n"
-    else:
-        dataset_summary = "No dataset uploaded yet."
+    df = st.session_state.df
+    target = st.session_state.target
+    task_type = st.session_state.task_type
+    last_model = st.session_state.last_model
 
-    messages = [
-        {"role": "system", "content": 
-         "You are a helpful AI assistant for data analysis and machine learning. "
-         "Here is the dataset context:\n" + dataset_summary}
-    ]
+    dataset_summary = "No dataset uploaded."
+    if df is not None:
+        dataset_summary = f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns. Columns: {', '.join(df.columns)}"
+        if target:
+            dataset_summary += f"\nTarget: {target}\nTask type: {task_type}"
+        if last_model:
+            dataset_summary += f"\nLast trained model: {last_model}"
+
+    system_msg = f"You are an AI assistant for data analysis and ML. Here is the dataset context:\n{dataset_summary}"
+
+    messages = [{"role": "system", "content": system_msg}]
     messages += st.session_state.messages
 
+    # Get LLM response for intent
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=messages
     )
     reply = response.choices[0].message.content
+
+    # ---- Agentic execution ----
+    reply_lower = reply.lower()
+    if df is not None:
+        recommended_models = recommend_models(task_type)
+
+        # Train model
+        for model in recommended_models:
+            if f"train {model.lower()}" in reply_lower:
+                try:
+                    results = train_model(df, target, task_type, model)
+                    metric_name = list(results.keys())[0]
+                    reply += f"\n✅ {model} trained! {metric_name}: {results[metric_name]:.3f}"
+                    st.session_state.last_model = model
+                except Exception as e:
+                    reply += f"\n⚠️ Training failed: {str(e)}"
+
+        # Compare models
+        if "compare" in reply_lower:
+            comparison = []
+            for model in recommended_models:
+                try:
+                    results = train_model(df, target, task_type, model)
+                    metric_name = list(results.keys())[0]
+                    comparison.append(f"{model}: {metric_name}={results[metric_name]:.3f}")
+                except Exception as e:
+                    comparison.append(f"{model}: ⚠️ {str(e)}")
+            reply += "\n\n### Comparison Results\n" + "\n".join(comparison)
+
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
-# Chat input below history
+# Input box
 st.text_input(
     "Type your message here",
     key="user_input",
