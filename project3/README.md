@@ -44,7 +44,7 @@ This app separates **ML tools** (deterministic execution) from an **AI chat assi
 ## Project Structure
 
 ```
-project/
+project3/
 ├── app.py
 ├── agents/
 │   ├── __init__.py
