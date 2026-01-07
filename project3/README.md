@@ -6,21 +6,21 @@ This app separates **ML tools** (deterministic execution) from an **AI chat assi
 
 ---
 
-## 🚀 Features
+## Features
 
-### 📁 Dataset Upload
+### Dataset Upload
 - Upload CSV datasets
 - Preview the first rows of the data
 - Automatically detect columns and data types
 
-### 📊 Exploratory Data Analysis (EDA)
+### Exploratory Data Analysis (EDA)
 - Summary statistics
 - Correlation matrix
 - Histograms for numeric columns
 - Scatter plots between numeric variables
 - Group-by counts for categorical columns
 
-### 🤖 ML Tools (UI-driven)
+### ML Tools (UI-driven)
 - Select a target column from a dropdown
 - Automatically infer task type (classification or regression)
 - Choose from recommended models
@@ -28,7 +28,7 @@ This app separates **ML tools** (deterministic execution) from an **AI chat assi
 - View evaluation metrics (R², accuracy, etc.)
 - Compare multiple models
 
-### 🧠 Agentic AI Chat Assistant
+### Agentic AI Chat Assistant
 - Understands the uploaded dataset context
 - Can:
   - Train models
@@ -41,7 +41,7 @@ This app separates **ML tools** (deterministic execution) from an **AI chat assi
 
 ---
 
-## 🏗 Project Structure
+## Project Structure
 
 ```
 project/
@@ -64,7 +64,7 @@ project/
 
 ---
 
-## 🧰 Tech Stack
+## Tech Stack
 
 - Python 3.10+
 - Streamlit
@@ -75,7 +75,7 @@ project/
 
 ---
 
-## 🔑 Environment Setup
+## Environment Setup
 
 ```bash
 pip install -r requirements.txt
@@ -86,7 +86,7 @@ export OPENAI_API_KEY="your_api_key_here"
 
 ---
 
-## ▶️ Run the App
+## Run the App
 
 ```bash
 streamlit run app.py
@@ -94,7 +94,7 @@ streamlit run app.py
 
 ---
 
-## 🧠 How the Agent Works
+## How the Agent Works
 
 The AI assistant uses a **two-stage decision system**:
 
@@ -108,7 +108,7 @@ This ensures fast responses, low API cost, and true agentic behavior.
 
 ---
 
-## 📈 Future Enhancements
+## Future Enhancements
 - Hyperparameter tuning UI
 - Model persistence
 - Feature importance visualization
