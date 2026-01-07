@@ -45,19 +45,19 @@ This app separates **ML tools** (deterministic execution) from an **AI chat assi
 
 ```
 project/
-│
 ├── app.py
 ├── agents/
+│   ├── __init__.py
 │   ├── orchestrator.py
-│
+│   └── prompts.py
 ├── tools/
+│   ├── __init__.py
 │   ├── data_tools.py
 │   ├── model_tools.py
 │   └── training_tools.py
-│
 ├── utils/
+│   ├── __init__.py
 │   └── state.py
-│
 ├── requirements.txt
 └── README.md
 ```
